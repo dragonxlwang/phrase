@@ -1,3 +1,4 @@
 # Phrase
-Phrase mining
-Phrase embedding
+## SNIPPER: Sparse Nonnegative Iterative Phrase Pruning for Extended
+Representation
+## Phrase mining
