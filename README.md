@@ -1,5 +1,6 @@
 # Phrase Mining and Embedding
-## SNIPPER:
-### Sparse Nonnegative Iterative Phrase Pruning for Extended Representation
+## SNIPERS:
+### Sparse Nonnegative Iterative Pruning for Extended Representation of
+### Sentences
 ## PLANS:
 ### Phrasal Latent Attachment with Negative Sampling
