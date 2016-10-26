@@ -626,7 +626,9 @@ void DictFree(Dictionary *d) {
 }
 
 void DictResize(Dictionary *d, int cap) {
+  // increase the cap of the dictionary
   int i, h;
+  if (d->cap > cap) return;
   d->cap = cap;
   d->id2key = (char **)realloc(d->id2key, d->cap * sizeof(char *));
   d->id2val = (real *)realloc(d->id2val, d->cap * sizeof(real));
@@ -647,13 +649,48 @@ void DictResize(Dictionary *d, int cap) {
   return;
 }
 
+pair *DictSort(Dictionary *d) {
+  int i;
+  real *arr = (real *)malloc(d->size * sizeof(real));
+  for (i = 0; i < d->size; i++) arr[i] = d->id2val[i];
+  return sorted(arr, d->size, 1);
+}
+
+int DictReduce(Dictionary *d, int size, pair **sorted_pairs_ptr) {
+  // sort the dictionary items and only keep the top cap items
+  int i, j, h;
+  if (d->size < size) return 0;
+  pair *sorted_pairs = DictSort(d);
+  memset(d->hash2head, 0xFF, d->cap * sizeof(int));
+  char **id2key = (char **)malloc(d->cap * sizeof(char *));
+  real *id2val = (real *)malloc(d->cap * sizeof(real));
+  for (j = 0; j < size; j++) {
+    i = sorted_pairs[j].key;
+    id2key[j] = d->id2key[i];
+    id2val[j] = d->id2val[i];
+    h = DictBkdrHash(d->id2key[i]) % d->cap;
+    d->id2next[j] = d->hash2head[h];
+    d->hash2head[h] = j;
+  }
+  for (j = size; j < d->size; j++) free(d->id2key[sorted_pairs[j].key]);
+  free(d->id2key);
+  free(d->id2val);
+  d->id2key = id2key;
+  d->id2val = id2val;
+  d->size = size;
+  if (sorted_pairs_ptr) *sorted_pairs_ptr = sorted_pairs;
+  return 1;
+}
+
+void DictLink(Dictionary *d, int h, char *k) {}
+
 void DictInsert(Dictionary *d, char *k, real v) {
   int h = DictBkdrHash(k) % d->cap;
   int i = d->hash2head[h];
   while (i != -1 && strcmp(d->id2key[i], k) != 0) i = d->id2next[i];
   if (i == -1) {
     if (d->size == d->cap) {
-      printf("resize: %d => %d\n", d->size, d->cap);
+      LOG(2, "resize: %d => %d\n", d->size, d->cap);
       DictResize(d, d->cap * 2);
     }
     i = d->size++;
@@ -662,6 +699,31 @@ void DictInsert(Dictionary *d, char *k, real v) {
     d->hash2head[h] = i;
   }
   d->id2val[i] = v;
+  return;
+}
+
+void DictIncrement(Dictionary *d, char *k, real inc, real default_val) {
+  int h = DictBkdrHash(k) % d->cap;
+  int i = d->hash2head[h];
+  while (i != -1 && strcmp(d->id2key[i], k) != 0) i = d->id2next[i];
+  if (i == -1) {
+    if (d->size == d->cap) {
+      LOG(2, "resize: %d => %d\n", d->size, d->cap);
+      DictResize(d, d->cap * 2);
+    }
+    i = d->size++;
+    d->id2key[i] = sclone(k);
+    d->id2next[i] = d->hash2head[h];
+    d->hash2head[h] = i;
+    d->id2val[i] = default_val;
+  }
+  d->id2val[i] += inc;
+  return;
+}
+
+void DictShrink(Dictionary *d, real x) {
+  int i;
+  for (i = 0; i < d->size; i++) d->id2val[i] *= x;
   return;
 }
 
