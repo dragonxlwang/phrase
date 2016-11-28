@@ -22,6 +22,8 @@
 
 #define NUM_EXP_TABLE_LEN 0xFFFFF
 real NUM_EXP_TABLE[NUM_EXP_TABLE_LEN];
+real NUM_SIGM_TABLE[NUM_EXP_TABLE_LEN];
+real NUM_LOG_SIGM_TABLE[NUM_EXP_TABLE_LEN];
 real NUM_EXP_HIGH = 1.0;
 real NUM_EXP_LOW = -15;
 real NumExp(real x) {
@@ -31,6 +33,34 @@ real NumExp(real x) {
     return 0;
   else
     return NUM_EXP_TABLE[i];
+}
+real NumSigmoid(real x) {
+  int i;
+  if (x >= -NUM_EXP_LOW)
+    return 1;
+  else if (x <= NUM_EXP_LOW)
+    return 0;
+  else if (x < 0) {
+    i = (x - NUM_EXP_LOW) / (NUM_EXP_HIGH - NUM_EXP_LOW) * NUM_EXP_TABLE_LEN;
+    return NUM_SIGM_TABLE[i];
+  } else {
+    i = (-x - NUM_EXP_LOW) / (NUM_EXP_HIGH - NUM_EXP_LOW) * NUM_EXP_TABLE_LEN;
+    return 1 - NUM_SIGM_TABLE[i];
+  }
+}
+real NumLogSigmoid(real x) {
+  int i;
+  if (x >= -NUM_EXP_LOW)
+    return 0;
+  else if (x <= NUM_EXP_LOW)
+    return x;
+  else if (x < 0) {
+    i = (x - NUM_EXP_LOW) / (NUM_EXP_HIGH - NUM_EXP_LOW) * NUM_EXP_TABLE_LEN;
+    return NUM_LOG_SIGM_TABLE[i];
+  } else {
+    i = (-x - NUM_EXP_LOW) / (NUM_EXP_HIGH - NUM_EXP_LOW) * NUM_EXP_TABLE_LEN;
+    return x + NUM_LOG_SIGM_TABLE[i];
+  }
 }
 
 real NumRandNext(unsigned long *seed) {
@@ -165,7 +195,7 @@ int *NumNewHugeIntVec(long elem_num) {
 
 real *NumNewVec(long elem_num) { return malloc(elem_num * sizeof(real)); }
 
-real *NumNewIntVec(long elem_num) { return malloc(elem_num * sizeof(int)); }
+int *NumNewIntVec(long elem_num) { return malloc(elem_num * sizeof(int)); }
 
 void NumCopyVec(real *d, real *s, int l) {
   memcpy(d, s, l * sizeof(real));
@@ -323,19 +353,11 @@ real NumSoftMax(real *a, real d, int l) {
   return (e > 0) ? e : 0;
 }
 
-real NumSigmoid(real x) {
-  real y;
-  if (x >= -NUM_EXP_LOW)
-    return 1;
-  else if (x <= NUM_EXP_LOW)
-    return 0;
-  else if (x < 0) {
-    y = NumExp(x);
-    return y / (1 + y);
-  } else {
-    y = NumExp(-x);
-    return 1 / (1 + y);
-  }
+void NumSoftMaxUnnormalized(real *a, int l) {
+  real c = MAX(a, l);
+  int i;
+  for (i = 0; i < l; i++) a[i] = NumExp(a[i] - c);
+  return;
 }
 
 void NumVecProjUnitSphere(real *a, real s, int l) {
@@ -404,6 +426,14 @@ real NumVecVar(real *a, int l) {
 }
 
 real NumVecStd(real *a, int l) { return sqrt(NumVecVar(a, l)); }
+
+void NumNormalizeVec(real *a, int l) {
+  real s = NumSumVec(a, l);
+  int i;
+  if (s != 0)
+    for (i = 0; i < l; i++) a[i] /= s;
+  return;
+}
 
 real NumSvSum(int *svk, int svn, real *svv) {
   int i;
@@ -486,13 +516,25 @@ int NumMultinomialTableSample(int *x, int l, real r, unsigned long *rs) {
   return x[j];
 }
 
+int NumMultinomialSample(real *pmf, int l, unsigned long *rs) {
+  if (!rs) rs = &RANDOM_SEED;
+  real p = NumRandNext(rs);
+  int i;
+  for (i = 0; (p -= pmf[i]) > 0; i++)
+    ;
+  return i;
+}
+
 void NumInit() {
   // Initialize exp table;
   int i;
-  real x;
+  real x, y;
   for (i = 0; i < NUM_EXP_TABLE_LEN; i++) {
     x = NUM_EXP_LOW + i * (NUM_EXP_HIGH - NUM_EXP_LOW) / NUM_EXP_TABLE_LEN;
-    NUM_EXP_TABLE[i] = exp(x);
+    y = exp(x);
+    NUM_EXP_TABLE[i] = y;
+    NUM_SIGM_TABLE[i] = y / (1 + y);
+    NUM_LOG_SIGM_TABLE[i] = x - log(1 + y);
   }
 }
 

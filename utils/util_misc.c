@@ -682,8 +682,6 @@ int DictReduce(Dictionary *d, int size, pair **sorted_pairs_ptr) {
   return 1;
 }
 
-void DictLink(Dictionary *d, int h, char *k) {}
-
 void DictInsert(Dictionary *d, char *k, real v) {
   int h = DictBkdrHash(k) % d->cap;
   int i = d->hash2head[h];
