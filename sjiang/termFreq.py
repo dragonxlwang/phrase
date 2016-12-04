@@ -1,4 +1,5 @@
 import io, os, sys, prefixTree
+from datetime import datetime
 
 def buildPrefixTree(filename):
 	tree = prefixTree.PrefixTree()
@@ -45,12 +46,12 @@ if __name__=='__main__':
 	nytfile = '/home/xwang95/data/gigaword/giga_nyt.txt' 
 	wikifile = '/home/sjiang18/Data/plans/wiki.term'
 	outfile = '/home/sjiang18/Data/plans/wiki.nyt.freq'
-	print 'construct prefix tree'
+	print 'construct prefix tree: ', datetime.now()
 	tree = buildPrefixTree(wikifile)
-	print '\nconstruction done'
+	print '\nconstruction done: ', datetime.now()
 	print '\nextract terms'
 	dic = get_freq(tree, nytfile)
-	print '\nextraction done'
+	print '\nextraction done: ', datetime.now()
 	print '\noutput the result'
 	output_result(outfile, dic)
-	print 'output done'
+	print 'output done: ', datetime.now()
