@@ -330,6 +330,14 @@ int getoptpos(char *str, int argc, char **argv) {
   return -1;
 }
 
+void sfread(void *ptr, size_t s, size_t n, FILE *fin) {
+  if (fread(ptr, s, n, fin) != n) {
+    LOG(0, "Error!\n");
+    exit(1);
+  }
+  return;
+}
+
 /***
  *     #######
  *     #       # #      ######

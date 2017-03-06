@@ -23,15 +23,13 @@ int sid_plans_ppb_lock = 0;
 void PlansThreadPrintProgBar(int dbg_lvl, int tid, real p) {
   if (sid_plans_ppb_lock) return;
   sid_plans_ppb_lock = 1;
-
-  char *str = malloc(0x1000);
-
+  char str[0x1000];
   int i, bar_len = 10;
   clock_t cur_clock_t = clock();
   real pct = p * 100;
   int bar = p * bar_len;
   double st = (double)(cur_clock_t - start_clock_t) / CLOCKS_PER_SEC;
-  char *ht = strtime(st / thread_num);
+  char *ht = strtime(st / V_THREAD_NUM);
   sprintfc(str, 'y', 'k', "[%7.4lf%%]: ", pct);             // percentage
   for (i = 0; i < bar; i++) saprintfc(str, 'r', 'k', "+");  // bar: past
   saprintfc(str, 'w', 'k', "~");                            // bar: current
@@ -43,19 +41,6 @@ void PlansThreadPrintProgBar(int dbg_lvl, int tid, real p) {
   saprintf(str, "TIME:%.2e/%s ", st, ht);                   // time
   saprintf(str, "GDSS:%.4e ", gd_ss);                       // gdss
   free(ht);
-#ifdef DEBUG
-  real scr = NumVecNorm(model->scr, model->v * model->n);
-  real ss = NumMatMaxRowNorm(model->scr, model->v, model->n);
-  real tar = NumVecNorm(model->tar, model->v * model->n);
-  real tt = NumMatMaxRowNorm(model->tar, model->v, model->n);
-  saprintf(str, "SCR:%.2e=%.2e*", scr, scr / ss);  // scr
-  saprintfc(str, 'r', 'k', "%.2e", ss);            // ss
-  saprintf(str, " ");                              //
-  saprintf(str, "TAR=%.2e=%.2e*", tar, tar / tt);  // tar
-  saprintfc(str, 'r', 'k', "%.2e", tt);            // tt
-  saprintf(str, " ");                              //
-#endif
-  return str;
 }
 
 real PlansEvalLL(real *scr_embd, int wid, int is_posi, real d) {
@@ -174,7 +159,7 @@ void *PlansThreadTrain(void *arg) {
       fseek(fin, fbeg, SEEK_SET);
       if (V_CACHE_INTERMEDIATE_MODEL &&
           iter_num % V_CACHE_INTERMEDIATE_MODEL == 0)
-        ModelSave(model, iter_num, V_MODEL_SAVE_PATH);
+        RestSave(rest, iter_num, V_MODEL_SAVE_PATH);
       iter_num++;
     }
   }

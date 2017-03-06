@@ -39,18 +39,18 @@ flags = [
     'c',
     '-Wall',
     '-std=gnu99',
-    # '-Wno-unused-variable',
-    # '-Wno-unused-value',
+    '-I',
+    '.',
+    '-Wall',
+    '-Winvalid-pch',
+    '-Wno-deprecated',
+    '-Wno-sign-compare',
+    '-Wno-unused-variable',
+    '-Woverloaded-virtual',
 ]
 
 if platform.platform().startswith('Linux'):
   flags.extend([
-    '-isystem',
-    '/usr/bin/../lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7',
-    '-isystem',
-    '/usr/bin/../lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/x86_64-redhat-linux',
-    '-isystem',
-    '/usr/bin/../lib/gcc/x86_64-redhat-linux/4.4.7/../../../../include/c++/4.4.7/backward',
     '-isystem',
     '/usr/local/include',
     '-isystem',
