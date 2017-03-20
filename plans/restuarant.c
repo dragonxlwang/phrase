@@ -25,6 +25,7 @@ typedef struct Restaurant {
   int embd_dim;
   real *default_embd;
   real shrink_rate;
+  real l2w;
   real max_table_num;
   real interval_size;
   //////////////////////////////
@@ -32,8 +33,8 @@ typedef struct Restaurant {
 } Restaurant;
 
 Restaurant *RestCreate(int cap, int embd_dim, real init_lb, real init_ub,
-                       real shrink_rate, real max_table_num,
-                       int interval_size) {
+                       real shrink_rate, real l2w, real max_table_num,
+                       real interval_size) {
   int i;
   Restaurant *r = (Restaurant *)malloc(sizeof(Restaurant));
   if (cap < 0) cap = 0xFFFFF;  // default 1M
@@ -57,6 +58,7 @@ Restaurant *RestCreate(int cap, int embd_dim, real init_lb, real init_ub,
     exit(1);
   }
   r->shrink_rate = shrink_rate;
+  r->l2w = l2w;
   r->max_table_num = max_table_num;
   r->interval_size = interval_size;
   r->reduce_lock = 0;
@@ -122,12 +124,15 @@ pair *RestSort(Restaurant *r, int sort_size) {
 
 void RestReduce(Restaurant *r) {
   // reduce the number of table to max_table_num
-  int i, j;
+  int i, j, k;
   // safeguard for thread racing
   if (r->customer_cnt < r->interval_size) return;
   r->customer_cnt = 0;
   if (r->size <= r->max_table_num) {  // only shrink, no table remove
-    for (i = 0; i < r->size; i++) r->id2cnum[i] *= r->shrink_rate;
+    for (i = 0; i < r->size; i++) {
+      r->id2cnum[i] *= r->shrink_rate;
+      if (r->l2w > 0) NumVecMulC(r->id2embd[i], 1 - r->l2w, r->embd_dim);
+    }
   } else {  // shrink and remove extra tables
     int cap = r->cap;
     int sort_size = r->size;
@@ -143,6 +148,7 @@ void RestReduce(Restaurant *r) {
       id2table[i] = r->id2table[j];
       id2cnum[i] = r->id2cnum[j] * r->shrink_rate;
       id2embd[i] = r->id2embd[j];
+      if (r->l2w > 0) NumVecMulC(id2embd[i], 1 - r->l2w, r->embd_dim);
       RestBkdrLink(id2table[i], i, cap, id2next, hash2head);
     }
     for (i = r->max_table_num; i < sort_size; i++)
@@ -207,14 +213,15 @@ real *RestId2Embd(Restaurant *r, int i) {
   return (i == -1) ? r->default_embd : r->id2embd[i];
 }
 
-void RestSave(Restaurant *r, int iter_num, char *fp) {
+void RestSave(Restaurant *r, real *w_embd, int v, int n, int iter_num,
+              char *fp) {
   char *rfp;
   if (iter_num == -1) {  // save final model, call by master
     rfp = sclone(fp);    // so that free(mfp) can work
   } else {               // avoid thread racing
     char *rdp = sformat("%s.dir", fp);
     if (!direxists(rdp)) dirmake(rdp);
-    rfp = sformat("%s/%d.iter", rdp, iter_num);
+    rfp = sformat("%s/%d.rest", rdp, iter_num);
     free(rdp);
     if (fexists(rfp)) return;
     // do not cache when there is a large chance the restaurant will be modified
@@ -233,6 +240,7 @@ void RestSave(Restaurant *r, int iter_num, char *fp) {
   fwrite(&r->embd_dim, sizeof(int), 1, fout);
   fwrite(r->default_embd, sizeof(real), r->embd_dim, fout);
   fwrite(&r->shrink_rate, sizeof(real), 1, fout);
+  fwrite(&r->l2w, sizeof(real), 1, fout);
   fwrite(&r->max_table_num, sizeof(real), 1, fout);
   fwrite(&r->interval_size, sizeof(real), 1, fout);
   //////////////////////////////
@@ -245,16 +253,20 @@ void RestSave(Restaurant *r, int iter_num, char *fp) {
     fwrite(r->id2embd[i], sizeof(real), r->embd_dim, fout);
   fwrite(r->id2next, sizeof(int), size, fout);
   fwrite(r->hash2head, sizeof(int), cap, fout);
+  fwrite(&v, sizeof(int), 1, fout);
+  fwrite(&n, sizeof(int), 1, fout);
+  fwrite(w_embd, sizeof(real), v * n, fout);
   fclose(fout);
   free(rfp);
   if (iter_num == -1) {  // print only when saving final model
     LOGC(1, 'c', 'k', "[REST]: Save to %s\n", fp);
-    LOGC(1, 'c', 'k', "[REST]: size = %d, cap = %d\n", size, cap);
+    LOGC(1, 'c', 'k', "[REST]: size = %d, cap = %d, v = %d, n = %d\n", size,
+         cap, v, n);
   }
   return;
 }
 
-Restaurant *RestLoad(char *fp) {
+Restaurant *RestLoad(char *fp, real **w_embd_ptr, int *nptr, int *vptr) {
   FILE *fin = fopen(fp, "rb");
   if (!fin) {
     LOG(0, "Error!\n");
@@ -267,6 +279,7 @@ Restaurant *RestLoad(char *fp) {
   r->default_embd = NumNewVec(r->embd_dim);
   sfread(r->default_embd, sizeof(real), r->embd_dim, fin);
   sfread(&r->shrink_rate, sizeof(real), 1, fin);
+  sfread(&r->l2w, sizeof(real), 1, fin);
   sfread(&r->max_table_num, sizeof(real), 1, fin);
   sfread(&r->interval_size, sizeof(real), 1, fin);
   //////////////////////////////
@@ -291,6 +304,13 @@ Restaurant *RestLoad(char *fp) {
   sfread(r->id2next, sizeof(int), r->size, fin);
   r->hash2head = NumNewIntVec(r->cap);
   sfread(r->hash2head, sizeof(int), r->cap, fin);
+  int v, n;
+  sfread(&v, sizeof(int), 1, fin);
+  sfread(&n, sizeof(int), 1, fin);
+  *w_embd_ptr = NumNewHugeVec(v * n);
+  sfread(*w_embd_ptr, sizeof(int), v * n, fin);
+  *vptr = v;
+  *nptr = n;
   return r;
 }
 

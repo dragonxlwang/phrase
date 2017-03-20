@@ -51,10 +51,18 @@ real PlansEvalLL(real *scr_embd, int wid, int is_posi, real d) {
 
 void PlansOptmLL(real *scr_embd, int wid, int is_posi, real d) {
   real *tar_embd = w_embd + wid * N;
-  real s = gd_ss / d * (is_posi == 1 ? 1 : 0) -
-           NumSigmoid(NumVecDot(scr_embd, tar_embd, N));
+  real s =
+      gd_ss / d *
+      (is_posi == 1 ? 1 : 0 - NumSigmoid(NumVecDot(scr_embd, tar_embd, N)));
+
   NumVecAddCVec(scr_embd, tar_embd, s, N);
+  if (V_MODEL_PROJ_BALL_NORM > 0)
+    NumVecProjUnitBall(scr_embd, V_MODEL_PROJ_BALL_NORM, N);
+
   NumVecAddCVec(tar_embd, scr_embd, s, N);
+  if (V_MODEL_PROJ_BALL_NORM > 0)
+    NumVecProjUnitBall(tar_embd, V_MODEL_PROJ_BALL_NORM, N);
+
   return;
 }
 
@@ -89,7 +97,7 @@ void PlansSample(int *ids, int l, int *neg_lst, int neg_num, int pos,
       f += PlansEvalLL(scr_embd, ids[j], 1, d);                  //
     for (j = 0; j < neg_num; j++)                                // neg samples
       f += PlansEvalLL(scr_embd, neg_lst[j], 0, 1);              //
-    prob_lst[i] = f / temp;                                      // annealing
+    prob_lst[i] = f * inv_temp;                                  // annealing
   }
   NumSoftMax(prob_lst, 1, t);
   q = NumMultinomialSample(prob_lst, t, rs);
@@ -153,13 +161,14 @@ void *PlansThreadTrain(void *arg) {
       progress[tid] = iter_num + (double)(fpos - fbeg) / (fend - fbeg);  // prog
       p = GetTrainProgress(progress, V_THREAD_NUM, V_ITER_NUM);          //
       gd_ss = V_INIT_GRAD_DESCENT_STEP_SIZE * (1 - p);                   // gdss
+      inv_temp = exp(p * log(V_FINAL_INV_TEMP));                         // temp
       PlansThreadPrintProgBar(2, tid, p);                                // info
     }
     if (feof(fin) || fpos >= fend) {
       fseek(fin, fbeg, SEEK_SET);
       if (V_CACHE_INTERMEDIATE_MODEL &&
           iter_num % V_CACHE_INTERMEDIATE_MODEL == 0)
-        RestSave(rest, iter_num, V_MODEL_SAVE_PATH);
+        RestSave(rest, w_embd, V, N, iter_num, V_MODEL_SAVE_PATH);
       iter_num++;
     }
   }
