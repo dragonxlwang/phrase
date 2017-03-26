@@ -41,11 +41,10 @@ typedef struct Restaurant {
 
 char **RestAllocId2Table(long cap) {
   int i;
-  const int MAX_PHRASE_LENGTH = WUP * PUP * 3;
   char **id2table = (char **)malloc(cap * sizeof(char *));
   for (i = 0; i < cap; i++) {
-    id2table[i] = (char *)malloc(MAX_PHRASE_LENGTH * sizeof(char));
-    memset(id2table[i], 0, MAX_PHRASE_LENGTH * sizeof(char));
+    id2table[i] = (char *)malloc(MAX_PHRASE_LEN * sizeof(char));
+    memset(id2table[i], 0, MAX_PHRASE_LEN * sizeof(char));
   }
   return id2table;
 }
@@ -156,7 +155,7 @@ real **RestReallocId2Embd(real **id2embd, long old_size, long new_cap,
 #define REST_LOCATE_AND_ADD(R, S)                              \
   ({                                                           \
     if (R->customer_cnt++ > R->interval_size) RestReduce(&R);  \
-    if (R->size >= 0.8 * R->cap) RestResize(&R, 2 * R->cap);   \
+    if (R->size >= 0.85 * R->cap) RestResize(&R, 2 * R->cap);  \
     int _i = REST_LOCATE(R, S);                                \
     if (_i == -1) {                                            \
       _i = R->size++;                                          \

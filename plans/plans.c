@@ -118,7 +118,7 @@ void PlansSample(int *ids, int l, int *neg_lst, int neg_num, int pos,
 
 void PlansUpdate(int *ids, int l, int *neg_lst, int neg_num, int beg, int end) {
   int i, j;
-  char str[0x1000];
+  char str[MAX_PHRASE_LEN];
   real scr_embd[NUP], d;
   PHRASE_WID2STR(ids, beg, end, vcb, str);  // phrase str
   i = REST_LOCATE_AND_ADD(rest, str);

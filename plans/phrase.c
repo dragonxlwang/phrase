@@ -22,6 +22,7 @@
         strcat(STR + strlen(STR), "=||=");                     \
         strcat(STR + strlen(STR), VocabGetWord(VCB, IDS[_i])); \
       }                                                        \
+      if (strlen(STR) + 2 * WUP > MAX_PHRASE_LEN) break;       \
     }                                                          \
   })
 #endif /* ifndef PHRASE */

@@ -22,7 +22,7 @@ char *V_TEXT_FILE_PATH = "~/local/data/gigaword/giga_nyt.txt";  // "text8/text8"
 char *V_VOCAB_FILE_PATH = NULL;  // don't set it if can be inferred from above
 char *V_MODEL_SAVE_PATH = NULL;
 
-int V_THREAD_NUM = 46;
+int V_THREAD_NUM = 40;
 int V_ITER_NUM = 10;
 
 // Initial grad descent step size
@@ -32,9 +32,9 @@ real V_FINAL_INV_TEMP = 5;
 // shrink rate for customer number
 real V_REST_SHRINK_RATE = 0.99;
 // interval size between shrink in restaurant
-real V_REST_INTERVAL_SIZE = 1e5;
+real V_REST_INTERVAL_SIZE = 0.5e6;
 // max number of tables in restaurant
-real V_REST_MAX_TABLE_SIZE = 1e6;
+real V_REST_MAX_TABLE_SIZE = 1.5e6;
 // Model Shrink: l-2 regularization:
 real V_L2_REGULARIZATION_WEIGHT = -1;  // 1e-3;
 // Model Shrink: if proj model to ball with specified norm, -1 if not proj
@@ -52,7 +52,7 @@ int V_VOCAB_OVERWRITE = 0;
 // if load model from file instead of random initiailization
 int V_MODEL_LOAD = 0;
 int N = 100;       // embedding dimension
-int V = 100000;    // vocabulary size cap, 100K, set to -1 if no limit
+int V = 0.1e6;     // vocabulary size cap, 100K, set to -1 if no limit
 int C = 5;         // context length
 int P = 4;         // phrase max length
 real alpha = 0.1;  // CRP prior
@@ -301,7 +301,7 @@ void VariableInit(int argc, char **argv) {
       V = vv;
     }
   } else {
-    rest = RestCreate((long)V * 100, N, -model_init_amp, model_init_amp,
+    rest = RestCreate((long)V * 20, N, -model_init_amp, model_init_amp,
                       V_REST_SHRINK_RATE, V_L2_REGULARIZATION_WEIGHT,
                       (long)V_REST_MAX_TABLE_SIZE,
                       (long)V_REST_INTERVAL_SIZE);  // >>

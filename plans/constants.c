@@ -7,5 +7,6 @@
 #define PUP 10                 // upper bound for phrase length
 #define WUP TEXT_MAX_WORD_LEN  // upper bound for character number in a word
 #define SUP TEXT_MAX_SENT_WCT  // upper bound for word number in a sentence
+#define MAX_PHRASE_LEN 0x800   // upper bound for phrase length
 
 #endif /* ifndef CONSTANTS */
