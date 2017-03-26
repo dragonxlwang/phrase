@@ -58,10 +58,10 @@ int P = 4;         // phrase max length
 real alpha = 0.1;  // CRP prior
 
 // -------------------------------- Model -------------------------------------
-Vocabulary *vcb;            // vocabulary
-real *w_embd;               // word embedding (target only)
-volatile Restaurant *rest;  // restaurant
-NegativeSampler *ns;        // negative sampler
+Vocabulary *vcb;      // vocabulary
+real *w_embd;         // word embedding (target only)
+Restaurant *rests;    // restaurants (two, one is the backup)
+NegativeSampler *ns;  // negative sampler
 // ---------------------------- global variables ------------------------------
 real gd_ss;             // grad descend step size
 real inv_temp;          // inverse of temperature (monotonically increasing)
@@ -290,7 +290,7 @@ void VariableInit(int argc, char **argv) {
   // load model if necessary,  otherwise init model with random values
   if (V_MODEL_LOAD && fexists(V_MODEL_SAVE_PATH)) {
     int nn, vv;
-    rest = RestLoad(V_MODEL_SAVE_PATH, &w_embd, &nn, &vv);
+    rests = RestLoad(V_MODEL_SAVE_PATH, &w_embd, &nn, &vv);
 
     if (N != nn) {
       LOGC(0, 'r', 'k', "[MODEL]: overwrite N from %d to %d\n", N, nn);
@@ -301,11 +301,11 @@ void VariableInit(int argc, char **argv) {
       V = vv;
     }
   } else {
-    rest = RestCreate((long)V * 20, N, -model_init_amp, model_init_amp,
-                      V_REST_SHRINK_RATE, V_L2_REGULARIZATION_WEIGHT,
-                      (long)V_REST_MAX_TABLE_SIZE,
-                      (long)V_REST_INTERVAL_SIZE);  // >>
-    w_embd = NumNewHugeVec(V * N);                  // >>
+    rests = RestCreate((long)V * 30, N, -model_init_amp, model_init_amp,
+                       V_REST_SHRINK_RATE, V_L2_REGULARIZATION_WEIGHT,
+                       (long)V_REST_MAX_TABLE_SIZE,
+                       (long)V_REST_INTERVAL_SIZE);  // >>
+    w_embd = NumNewHugeVec(V * N);                   // >>
     NumRandFillVec(w_embd, -model_init_amp, model_init_amp, V * N);
   }
   // initialization for negative sampler
@@ -324,7 +324,7 @@ void VariableFree() {
   free(progress);   // <<
   NsFree(ns);       // <<
   free(w_embd);     // <<
-  REST_FREE(rest);  // <<
+  RestFree(rests);  // <<
   VocabFree(vcb);   // <<
 }
 

@@ -35,8 +35,8 @@ void Train(int argc, char* argv[]) {
     free(pt);  // <<
   }
   if (cleaner) cleaner();
-  RestSave(rest, w_embd, V, N, -1, V_MODEL_SAVE_PATH);  // save model
-  VariableFree();                                       // <<
+  RestSave(rests, w_embd, V, N, -1, V_MODEL_SAVE_PATH);  // save model
+  VariableFree();                                        // <<
   LOG(1, "\nTraining finished. Took time %s\n",
       strclock(start_clock_t, clock(), V_THREAD_NUM));
   return;

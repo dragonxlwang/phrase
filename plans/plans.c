@@ -19,6 +19,8 @@
 #include "restuarant.c"
 #include "variables.c"
 
+#define CUR_REST ((&(rests[_RID])))
+
 pthread_mutex_t print_lock;
 void PlansThreadPrintProgBar(int dbg_lvl, int tid, real p) {
   if (pthread_mutex_trylock(&print_lock) != 0) return;
@@ -42,8 +44,8 @@ void PlansThreadPrintProgBar(int dbg_lvl, int tid, real p) {
   free(ht);
   saprintfc(str, 'c', 'k', "W_EMBD:%.4e (%.2e) ", NumVecNorm(w_embd, V * N),
             (double)V);  // w_embd
-  saprintfc(str, 'r', 'k', "REST:%.4e (%.2e)", REST_NORM(rest),
-            (double)rest->size);  // w_embd
+  saprintfc(str, 'r', 'k', "REST%d:%.4e (%.2e)", _RID, REST_NORM(CUR_REST),
+            (double)CUR_REST->size);  // w_embd
   LOGCR(dbg_lvl);
   LOG(dbg_lvl, "%s\n", str);
   pthread_mutex_unlock(&print_lock);
@@ -83,20 +85,20 @@ void PlansSample(int *ids, int l, int *neg_lst, int neg_num, int pos,
   char str[0x1000];
   int beg_lst[PUP * PUP], end_lst[PUP * PUP], loc_lst[PUP * PUP],
       cnum_lst[PUP * PUP];
-  real prob_lst[PUP * PUP], scr_embd[NUP];
+  real prob_lst[PUP * PUP], *scr_embd;
   for (beg = LARGER(pos - P, 0); beg <= pos; beg++)      // iter beg
     for (end = pos; end < SMALLER(beg + P, l); end++) {  // iter end
       if (beg == 0 && end == l - 1) continue;            //
       beg_lst[t] = beg;                                  // select [beg, end]
       end_lst[t] = end;                                  //
       PHRASE_WID2STR(ids, beg, end, vcb, str);           // phrase str
-      loc_lst[t] = REST_LOCATE(rest, str);               // find in rest
-      cnum_lst[t] = REST_ID2CNUM(rest, loc_lst[t]);      // customer number
+      loc_lst[t] = REST_LOCATE(CUR_REST, str);           // find in rest
+      cnum_lst[t] = REST_ID2CNUM(CUR_REST, loc_lst[t]);  // customer number
       if (loc_lst[t] == -1) u++;                         // unseen words
       t++;
     }
   for (i = 0; i < t; i++) {
-    REST_ID2EMBD_COPY(scr_embd, &rest, loc_lst[i]);       // phrase embedding
+    scr_embd = REST_ID2EMBD(CUR_REST, loc_lst[i]);        // phrase embedding
     beg = beg_lst[i];                                     //
     end = end_lst[i];                                     //
     f = log(loc_lst[i] == -1 ? alpha / u : cnum_lst[i]);  // prior
@@ -119,10 +121,10 @@ void PlansSample(int *ids, int l, int *neg_lst, int neg_num, int pos,
 void PlansUpdate(int *ids, int l, int *neg_lst, int neg_num, int beg, int end) {
   int i, j;
   char str[MAX_PHRASE_LEN];
-  real scr_embd[NUP], d;
+  real *scr_embd, d;
   PHRASE_WID2STR(ids, beg, end, vcb, str);  // phrase str
-  i = REST_LOCATE_AND_ADD(rest, str);
-  REST_ID2EMBD_COPY(scr_embd, &rest, i);
+  i = REST_LOCATE_AND_ADD(CUR_REST, str);
+  scr_embd = REST_ID2EMBD(CUR_REST, i);
   d = PlansGetDiscount(beg, end, l, neg_num);
   for (j = LARGER(beg - C, 0); j <= beg - 1; j++)       // left
     PlansOptmLL(scr_embd, ids[j], 1, d);                //
@@ -178,7 +180,7 @@ void *PlansThreadTrain(void *arg) {
       fseek(fin, fbeg, SEEK_SET);
       if (V_CACHE_INTERMEDIATE_MODEL &&
           iter_num % V_CACHE_INTERMEDIATE_MODEL == 0)
-        RestSave(rest, w_embd, V, N, iter_num, V_MODEL_SAVE_PATH);
+        RestSave(rests, w_embd, V, N, iter_num, V_MODEL_SAVE_PATH);
       iter_num++;
     }
   }

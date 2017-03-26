@@ -16,7 +16,10 @@
 #define CHECK_ALLOCATE_STATUS(x) \
   if (!x) LOG(0, "Error: Allocation failed for " #x "\n");
 
-pthread_mutex_t rest_lock, free_lock;
+void _strcpy(char *dest, char *scr) { strncpy(dest, scr, MAX_PHRASE_LEN); }
+
+pthread_mutex_t rest_lock;
+pthread_mutex_t *hash_locks;
 
 typedef struct Restaurant {
   char **id2table;  // do not need to rewrite
@@ -36,6 +39,8 @@ typedef struct Restaurant {
   long interval_size;
   //////////////////////////////
 } Restaurant;
+
+int _RID = 0;
 
 //// Allocation
 
@@ -70,40 +75,54 @@ int *RestAllocId2Next(long cap) {
   return id2next;
 }
 
+void RestInitHash2Head(int *hash2head, long cap) {
+  memset(hash2head, 0xFF, cap * sizeof(int));
+}
 int *RestAllocHash2Head(long cap) {
   int *hash2head = NumNewIntVec(cap);
-  memset(hash2head, 0xFF, cap * sizeof(int));
+  RestInitHash2Head(hash2head, cap);
   return hash2head;
 }
 
-//// Resize
+pthread_mutex_t *RestAllocLocks(long cap) {
+  pthread_mutex_t *locks =
+      (pthread_mutex_t *)malloc(cap * sizeof(pthread_mutex_t));
+  int i;
+  for (i = 0; i < cap; i++) {
+    if (pthread_mutex_init(&(locks[i]), NULL) != 0) {
+      LOG(0, "mutex lock at %d init failed\n", i);
+      return NULL;
+    }
+  }
+  return locks;
+}
 
-char **RestReallocId2Table(char **id2table, long old_size, long new_cap,
-                           pair *p) {
-  char **new_id2table = RestAllocId2Table(new_cap);
+//// Resize (always called only in single thread)
+
+void RestReallocId2Table(char **new_id2table, char **id2table, long old_size,
+                         pair *p) {
   int i;
   if (p) {
-    for (i = 0; i < old_size; i++) strcpy(new_id2table[i], id2table[p[i].key]);
+    for (i = 0; i < old_size; i++) _strcpy(new_id2table[i], id2table[p[i].key]);
   } else {
-    for (i = 0; i < old_size; i++) strcpy(new_id2table[i], id2table[i]);
+    for (i = 0; i < old_size; i++) _strcpy(new_id2table[i], id2table[i]);
   }
-  return new_id2table;
+  return;
 }
 
-real *RestReallocId2Cnum(real *id2cnum, long old_size, long new_cap, pair *p) {
-  real *new_id2cnum = RestAllocId2Cnum(new_cap);
+void RestReallocId2Cnum(real *new_id2cnum, real *id2cnum, long old_size,
+                        pair *p) {
+  int i;
   if (p) {
-    int i;
     for (i = 0; i < old_size; i++) new_id2cnum[i] = id2cnum[p[i].key];
   } else {
-    NumCopyVec(new_id2cnum, id2cnum, old_size);
+    for (i = 0; i < old_size; i++) new_id2cnum[i] = id2cnum[i];
   }
-  return new_id2cnum;
+  return;
 }
 
-real **RestReallocId2Embd(real **id2embd, long old_size, long new_cap,
-                          real *default_embd, int embd_dim, pair *p) {
-  real **new_id2embd = RestAllocId2Embd(new_cap, default_embd, embd_dim);
+void RestReallocId2Embd(real **new_id2embd, real **id2embd, long old_size,
+                        int embd_dim, pair *p) {
   int i;
   if (p) {
     for (i = 0; i < old_size; i++)
@@ -112,7 +131,7 @@ real **RestReallocId2Embd(real **id2embd, long old_size, long new_cap,
     for (i = 0; i < old_size; i++)
       NumCopyVec(new_id2embd[i], id2embd[i], embd_dim);
   }
-  return new_id2embd;
+  return;
 }
 
 //// Hash (make following macro because of volatile variables)
@@ -126,78 +145,65 @@ real **RestReallocId2Embd(real **id2embd, long old_size, long new_cap,
     _h %= CAP;                                                         \
     _h;                                                                \
   })
-#define REST_BKDR_LINK_WITH_HASH(H, I, ID2NEXT, HASH2HEAD) \
-  ({                                                       \
-    ID2NEXT[I] = HASH2HEAD[H];                             \
-    HASH2HEAD[H] = I;                                      \
+
+// link string S at position I in restuarnt R
+#define REST_BKDR_LINK_NO_LOCK(S, I, R) \
+  ({                                    \
+    int _h = REST_BKDR_HASH(S, R->cap); \
+    R->id2next[I] = R->hash2head[_h];   \
+    R->hash2head[_h] = R->id2next[I];   \
+  })
+#define REST_BKDR_LINK(S, I, R)              \
+  ({                                         \
+    int _h = REST_BKDR_HASH(S, R->cap);      \
+    pthread_mutex_lock(&(hash_locks[_h]));   \
+    R->id2next[I] = R->hash2head[_h];        \
+    R->hash2head[_h] = R->id2next[I];        \
+    pthread_mutex_unlock(&(hash_locks[_h])); \
   })
 
-#define REST_BKDR_LINK(S, I, CAP, ID2NEXT, HASH2HEAD) \
-  ({ REST_BKDR_LINK_WITH_HASH(REST_BKDR_HASH(S, CAP), I, ID2NEXT, HASH2HEAD); })
-
-#define REST_BKDR_FOLLOW_HASH_LINKED_LIST(H, S, ID2TABLE, ID2NEXT, HASH2HEAD, \
-                                          SIZE)                               \
-  ({                                                                          \
-    int _i = HASH2HEAD[H];                                                    \
-    while (_i != -1 && _i < SIZE && !strcmp(ID2TABLE[_i], S)) {               \
-      _i = ID2NEXT[_i];                                                       \
-    }                                                                         \
-    (_i < SIZE) ? _i : -1;                                                    \
+// TODO(xlwang): might want to append instead of prepend
+real _link_total = 1;
+real _link_error = 0;
+#define REST_LOCATE(R, S)                                             \
+  ({                                                                  \
+    int _h = REST_BKDR_HASH(S, R->cap);                               \
+    int _i = R->hash2head[_h];                                        \
+    int _step = 0;                                                    \
+    while (_i != -1 && _i < R->size && !strcmp(R->id2table[_i], S) && \
+           _step++ < 100) {                                           \
+      _i = R->id2next[_i];                                            \
+    }                                                                 \
+    if (_step >= 100) {                                               \
+      _link_error += 1;                                               \
+    }                                                                 \
+    _link_total += 1;                                                 \
+    (_i < R->size && _step < 100) ? _i : -1;                          \
   })
 
-#define REST_LOCATE(R, S)                                                    \
-  ({                                                                         \
-    REST_BKDR_FOLLOW_HASH_LINKED_LIST(REST_BKDR_HASH(S, R->cap), S,          \
-                                      R->id2table, R->id2next, R->hash2head, \
-                                      R->size);                              \
-  })
-
-#define REST_LOCATE_AND_ADD(R, S)                              \
-  ({                                                           \
-    if (R->customer_cnt++ > R->interval_size) RestReduce(&R);  \
-    if (R->size >= 0.85 * R->cap) RestResize(&R, 2 * R->cap);  \
-    int _i = REST_LOCATE(R, S);                                \
-    if (_i == -1) {                                            \
-      _i = R->size++;                                          \
-      strcpy(R->id2table[_i], S);                              \
-      R->id2cnum[_i] = 1;                                      \
-      REST_BKDR_LINK(S, _i, R->cap, R->id2next, R->hash2head); \
-    } else if (_i < R->size) {                                 \
-      R->id2cnum[_i] += 1;                                     \
-    }                                                          \
-    _i;                                                        \
+#define REST_LOCATE_AND_ADD(R, S)                               \
+  ({                                                            \
+    if (R->customer_cnt++ > R->interval_size) RestReduce(R);    \
+    if (R->size >= R->cap) {                                    \
+      LOG(0, "restaurant size exceeds\n");                      \
+      exit(1);                                                  \
+    }                                                           \
+    int _i = REST_LOCATE(R, S);                                 \
+    if (_i == -1) {                                             \
+      _i = R->size++;                                           \
+      _strcpy(R->id2table[_i], S);                              \
+      R->id2cnum[_i] = 1;                                       \
+      NumCopyVec(R->id2embd[_i], R->default_embd, R->embd_dim); \
+      REST_BKDR_LINK(S, _i, R);                                 \
+    } else if (_i < R->size) {                                  \
+      R->id2cnum[_i] += 1;                                      \
+    }                                                           \
+    _i;                                                         \
   })
 
 #define REST_ID2CNUM(R, I) ((I == -1 || I >= R->size) ? 0 : R->id2cnum[I])
-
-// A dangerous case: when copying the embd to dest, the restaurant is either
-// reduced or resized and thus the old address might not be valid anymore;
-// to address this issue, two measurement:
-//  1. add free_lock, actually to just check if it is locked and if not, unlock
-//     immediately; or otherwise wait until the lock is freed;
-//  2. use Restaurant ** instead of Restaurant *, and thus *R_PTR should always
-//     be valid
-//  Currently, we ony use the 2nd measurement;
-#define REST_ID2EMBD_COPY(DEST, R_PTR, I)                                     \
-  NumCopyVec(DEST, ((I == -1 || I >= (*R_PTR)->size) ? (*R_PTR)->default_embd \
-                                                     : (*R_PTR)->id2embd[I]), \
-             (*R_PTR)->embd_dim)
-
-//// free
-
-#define REST_FREE(R)                                       \
-  ({                                                       \
-    int _i;                                                \
-    for (_i = 0; _i < R->cap; _i++) free(R->id2table[_i]); \
-    for (_i = 0; _i < R->cap; _i++) free(R->id2embd[_i]);  \
-    free(R->id2table);                                     \
-    free(R->id2cnum);                                      \
-    free(R->id2embd);                                      \
-    free(R->id2next);                                      \
-    free(R->hash2head);                                    \
-    free(R->default_embd);                                 \
-    free(R);                                               \
-  })
+#define REST_ID2EMBD(R, I) \
+  ((I == -1 || I >= R->size) ? R->default_embd : R->id2embd[I])
 
 //// check allocation
 
@@ -223,7 +229,7 @@ real **RestReallocId2Embd(real **id2embd, long old_size, long new_cap,
     _SUM_NORM;                                              \
   })
 
-//// sort
+//// sort (always called in only one thread)
 
 pair *REST_SORTED_PAIRS;
 long REST_SORTED_LEN = 0;
@@ -242,112 +248,72 @@ pair *RestSort(Restaurant *r, int size) {
   return REST_SORTED_PAIRS;
 }
 
+//// create (always called in only one thread)
+
 Restaurant *RestCreate(long cap, int embd_dim, real init_lb, real init_ub,
                        real shrink_rate, real l2w, long max_table_num,
                        long interval_size) {
   LOG(2, "[Restaurant] Create with cap = %ld\n", cap);
 
-  int i;
-  Restaurant *r = (Restaurant *)malloc(sizeof(Restaurant));
+  int t;
+  Restaurant *_rests = (Restaurant *)malloc(sizeof(Restaurant) * 2);
   if (cap < 0) cap = 0xFFFFF;  // default 1M
 
-  r->size = 0;
-  r->cap = cap;
-  r->customer_cnt = 0;
-  r->embd_dim = embd_dim;
-  r->default_embd = NumNewVec(embd_dim);
-  NumRandFillVec(r->default_embd, embd_dim, init_lb, init_ub);
-  r->shrink_rate = shrink_rate;
-  r->l2w = l2w;
-  r->max_table_num = max_table_num;
-  r->interval_size = interval_size;
-
-  r->id2table = RestAllocId2Table(cap);
-  r->id2cnum = RestAllocId2Cnum(cap);
-  r->id2embd = RestAllocId2Embd(cap, r->default_embd, r->embd_dim);
-  r->id2next = RestAllocId2Next(cap);
-  r->hash2head = RestAllocHash2Head(cap);
-
-  REST_CHECK_ALLOCATION(r);
+  Restaurant *r;
+  real *default_embd = NumNewVec(embd_dim);
+  NumRandFillVec(default_embd, embd_dim, init_lb, init_ub);
+  for (t = 0; t < 2; t++) {
+    r = &(_rests[t]);
+    r->size = 0;
+    r->cap = cap;
+    r->customer_cnt = 0;
+    r->embd_dim = embd_dim;
+    r->default_embd = NumCloneVec(default_embd, embd_dim);
+    r->shrink_rate = shrink_rate;
+    r->l2w = l2w;
+    r->max_table_num = max_table_num;
+    r->interval_size = interval_size;
+    r->id2table = RestAllocId2Table(cap);  // size 2048
+    r->id2cnum = RestAllocId2Cnum(cap);
+    r->id2embd = RestAllocId2Embd(cap, r->default_embd, r->embd_dim);
+    r->id2next = RestAllocId2Next(cap);
+    r->hash2head = RestAllocHash2Head(cap);
+    hash_locks = RestAllocLocks(cap);  // size 40
+    REST_CHECK_ALLOCATION(r);
+  }
+  _RID = 0;
 
   if (pthread_mutex_init(&rest_lock, NULL) != 0) {
     LOG(0, "[Restaurant] Mutex init failed\n");
     return NULL;
   }
 
-  if (pthread_mutex_init(&free_lock, NULL) != 0) {
-    LOG(0, "[Restaurant] Mutex init failed\n");
-    return NULL;
-  }
+  free(default_embd);
 
   LOG(2, "[Restaurant] Create Finished\n");
-  return r;
-}
-
-void RestResize(Restaurant **rptr, int cap) {
-  if (pthread_mutex_trylock(&rest_lock) != 0) {
-    return;  // mutex not locked
-  }
-
-  LOG(0, "resize lock");
-
-  Restaurant *r = *rptr;
-  // only resize to a larger size
-  if (cap <= r->cap) {
-    exit(1);
-  }
-  int i;
-
-  Restaurant *nr = (Restaurant *)malloc(sizeof(Restaurant));
-  nr->size = r->size;  // snapshot
-  nr->cap = cap;
-  nr->customer_cnt = 0;
-  nr->embd_dim = r->embd_dim;
-  nr->default_embd = NumCloneVec(r->default_embd, r->embd_dim);
-  nr->shrink_rate = r->shrink_rate;
-  nr->l2w = r->l2w;
-  nr->max_table_num = r->max_table_num;
-  nr->interval_size = r->interval_size;
-
-  nr->id2table = RestReallocId2Table(r->id2table, nr->size, nr->cap, NULL);
-  nr->id2cnum = RestReallocId2Cnum(r->id2cnum, nr->size, nr->cap, NULL);
-  nr->id2embd = RestReallocId2Embd(r->id2embd, nr->size, nr->cap,
-                                   nr->default_embd, nr->embd_dim, NULL);
-  nr->id2next = RestAllocId2Next(nr->cap);
-  nr->hash2head = RestAllocHash2Head(nr->cap);
-  for (i = 0; i < nr->size; i++) {
-    REST_BKDR_LINK(nr->id2table[i], i, nr->cap, nr->id2next, nr->hash2head);
-  }
-
-  REST_CHECK_ALLOCATION(nr);
-
-  // add free_lock to avoid accessing invalid restaurant
-  /* pthread_mutex_lock(&free_lock); */
-  *rptr = nr;
-  REST_FREE(r);
-  /* pthread_mutex_unlock(&free_lock); */
-
-  pthread_mutex_unlock(&rest_lock);
-
-  LOG(0, "resize unlock");
-
-  return;
+  LOGC(0, 'b', 'k', "address: %ld %ld, size = %d %d\n", &(_rests[0]),
+       &(_rests[1]), _rests[0].size, _rests[1].size);
+  return _rests;
 }
 
 int reduce_cnt = 0;
-void RestReduce(Restaurant **rptr) {
+void RestReduce(Restaurant *some_rest) {
   if (pthread_mutex_trylock(&rest_lock) != 0) {
     return;  // mutex not locked
   }
 
-  LOG(0, "=======>>> REDUCE LOCK\n");
+  LOG(0, "=======>>> REDUCE LOCK, _RID = %d\n", _RID);
+  Restaurant *_rests = ((_RID == 0) ? some_rest : (some_rest - 1));
+  Restaurant *r = &(_rests[_RID]);
+  Restaurant *nr = &(_rests[1 - _RID]);
+  LOGC(0, 'b', 'k', "_RID = %d, size: %d, %d\n", _RID, r->size, nr->size);
 
-  Restaurant *r = *rptr;
   // reduce the number of table to max_table_num
   int i, j, k;
 
-  LOGDBG("Reduce cust=%d size=%d interval=%d pid=%ld ", (int)r->customer_cnt,
-         (int)r->size, (int)r->interval_size, (long int)pthread_self());
+  LOGDBG("Reduce cust=%d size=%d interval=%d pid=%ld _RID=%d ",
+         (int)r->customer_cnt, (int)r->size, (int)r->interval_size,
+         (long int)pthread_self(), _RID);
 
   if (r->size <= r->max_table_num) {
     LOGC(0, 'c', 'k', "Shrink only\n");
@@ -359,67 +325,59 @@ void RestReduce(Restaurant **rptr) {
     }
   } else {
     pair *sorted_pairs = RestSort(r, r->size);  // no need to free
-
-    LOGC(0, 'g', 'k', "Remove and Shrink: ");
-    LOGDBG("[%d] sorting: size = %d\n", reduce_cnt, r->size);
-
-    Restaurant *nr = (Restaurant *)malloc(sizeof(Restaurant));
     nr->size = r->max_table_num / 2;
-    nr->cap = r->cap;
     nr->customer_cnt = 0;
-    nr->embd_dim = r->embd_dim;
-    nr->default_embd = NumCloneVec(r->default_embd, r->embd_dim);
-    nr->shrink_rate = r->shrink_rate;
-    nr->l2w = r->l2w;
-    nr->max_table_num = r->max_table_num;
-    nr->interval_size = r->interval_size;
+
+    LOGC(0, 'g', 'k', "Remove and Shrink\n");
+    LOGC(0, 'y', 'k', "   [%d] size  %d => %d\n", reduce_cnt, r->size,
+         nr->size);
 
     LOGC(0, 'y', 'k', "   Check 1: Pass declaration\n");
 
-    nr->id2table =
-        RestReallocId2Table(r->id2table, nr->size, nr->cap, sorted_pairs);
-    nr->id2cnum =
-        RestReallocId2Cnum(r->id2cnum, nr->size, nr->cap, sorted_pairs);
-    nr->id2embd =
-        RestReallocId2Embd(r->id2embd, nr->size, nr->cap, nr->default_embd,
-                           nr->embd_dim, sorted_pairs);
-    nr->id2next = RestAllocId2Next(nr->cap);
-    nr->hash2head = RestAllocHash2Head(nr->cap);
+    RestReallocId2Table(nr->id2table, r->id2table, nr->size, sorted_pairs);
 
-    LOGC(0, 'y', 'k', "   Check 2: Pass reallocation\n");
+    LOGC(0, 'y', 'k', "   Check 2.1: id2table finish\n");
 
+    RestReallocId2Cnum(nr->id2cnum, r->id2cnum, nr->size, sorted_pairs);
+
+    LOGC(0, 'y', 'k', "   Check 2.2: id2cnum finish\n");
+
+    RestReallocId2Embd(nr->id2embd, r->id2embd, nr->size, nr->embd_dim,
+                       sorted_pairs);
+
+    LOGC(0, 'y', 'k', "   Check 2.3: id2embd finish\n");
+
+    RestInitHash2Head(nr->hash2head, nr->cap);
+
+    LOGC(0, 'y', 'k', "   Check 2.4: has2head finish\n");
+
+    // TODO(xlwang): assuming that at reducing time, the back-up restaurant is
+    // not accessed by any other threads
     for (i = 0; i < nr->size; i++) {
-      REST_BKDR_LINK(nr->id2table[i], i, nr->cap, nr->id2next, nr->hash2head);
+      REST_BKDR_LINK_NO_LOCK(nr->id2table[i], i, nr);
     }
 
     LOGC(0, 'y', 'k', "   Check 3: Pass hash linking\n");
 
-    REST_CHECK_ALLOCATION(nr);
-
-    LOGC(0, 'y', 'k', "   Check 4: Pass allocation checks\n");
-
-    // add free_lock to avoid accessing invalid restaurant
-    /* pthread_mutex_lock(&free_lock); */
-    *rptr = nr;
-    REST_FREE(r);
-    /* pthread_mutex_unlock(&free_lock); */
-
-    LOGC(0, 'y', 'k', "   Check 5: Pass old restaurant free\n");
+    _RID = 1 - _RID;
 
     reduce_cnt++;
   }
 
-  pthread_mutex_unlock(&rest_lock);
-
+  LOGC(0, 'y', 'k', "   Linking Errors: %e / %e = %e\n", _link_error,
+       _link_total, _link_error / _link_total);
   LOG(0, "=======<<< REDUCE UNLOCK\n");
+
+  pthread_mutex_unlock(&rest_lock);
 
   return;
 }
 
 // use real to return since we need it for compute probability anyways
 
-void RestSave(Restaurant *r, real *w_embd, int v, int n, int iter_num,
+void RestSave(Restaurant *_rests, real *w_embd, int v, int n, int iter_num,
               char *fp) {
+  Restaurant *r = &(_rests[_RID]);
   char *rfp;
   if (iter_num == -1) {  // save final model, call by master
     rfp = sclone(fp);    // so that free(mfp) can work
@@ -480,51 +438,77 @@ void RestSave(Restaurant *r, real *w_embd, int v, int n, int iter_num,
 }
 
 Restaurant *RestLoad(char *fp, real **w_embd_ptr, int *nptr, int *vptr) {
-  FILE *fin = fopen(fp, "rb");
-  if (!fin) {
-    LOG(0, "Error!\n");
-    exit(1);
+  int t, i, v, n;
+  char str[MAX_PHRASE_LEN];
+  Restaurant *_rests = (Restaurant *)malloc(sizeof(Restaurant) * 2);
+  Restaurant *r;
+  for (t = 0; t < 2; t++) {
+    FILE *fin = fopen(fp, "rb");
+    if (!fin) {
+      LOG(0, "Error!\n");
+      exit(1);
+    }
+    r = &(_rests[t]);
+    sfread(&r->embd_dim, sizeof(int), 1, fin);
+    r->default_embd = NumNewVec(r->embd_dim);
+    sfread(r->default_embd, sizeof(real), r->embd_dim, fin);
+    sfread(&r->shrink_rate, sizeof(real), 1, fin);
+    sfread(&r->l2w, sizeof(real), 1, fin);
+    sfread(&r->max_table_num, sizeof(long), 1, fin);
+    sfread(&r->interval_size, sizeof(long), 1, fin);
+    //////////////////////////////
+    sfread((void *)&r->size, sizeof(long), 1, fin);
+    sfread(&r->cap, sizeof(long), 1, fin);
+    sfread(&r->customer_cnt, sizeof(long), 1, fin);
+    r->id2table = (char **)malloc(r->cap * sizeof(char *));
+    for (i = 0; i < r->size; i++) {
+      fscanf(fin, "%s\n", str);
+      r->id2table[i] = sclone(str);
+    }
+    r->id2cnum = NumNewVec(r->cap);
+    sfread(r->id2cnum, sizeof(int), r->size, fin);
+    r->id2embd = (real **)malloc(r->cap * sizeof(real *));
+    for (i = 0; i < r->size; i++) {
+      r->id2embd[i] = NumNewVec(r->embd_dim);
+      sfread(r->id2embd[i], sizeof(real), r->embd_dim, fin);
+    }
+    for (i = r->size; i < r->cap; i++)
+      r->id2embd[i] = NumCloneVec(r->default_embd, r->embd_dim);
+    r->id2next = NumNewIntVec(r->cap);
+    sfread(r->id2next, sizeof(int), r->size, fin);
+    r->hash2head = NumNewIntVec(r->cap);
+    sfread(r->hash2head, sizeof(int), r->cap, fin);
+    if (t == 0) {
+      sfread(&v, sizeof(int), 1, fin);
+      sfread(&n, sizeof(int), 1, fin);
+      *w_embd_ptr = NumNewHugeVec(v * n);
+      sfread(*w_embd_ptr, sizeof(int), v * n, fin);
+      *vptr = v;
+      *nptr = n;
+      hash_locks = RestAllocLocks(r->cap);
+    }
+    fclose(fin);
   }
-  char str[0xFFFF];
-  int i;
-  Restaurant *r = (Restaurant *)malloc(sizeof(Restaurant));
-  sfread(&r->embd_dim, sizeof(int), 1, fin);
-  r->default_embd = NumNewVec(r->embd_dim);
-  sfread(r->default_embd, sizeof(real), r->embd_dim, fin);
-  sfread(&r->shrink_rate, sizeof(real), 1, fin);
-  sfread(&r->l2w, sizeof(real), 1, fin);
-  sfread(&r->max_table_num, sizeof(long), 1, fin);
-  sfread(&r->interval_size, sizeof(long), 1, fin);
-  //////////////////////////////
-  sfread((void *)&r->size, sizeof(long), 1, fin);
-  sfread(&r->cap, sizeof(long), 1, fin);
-  sfread(&r->customer_cnt, sizeof(long), 1, fin);
-  r->id2table = (char **)malloc(r->cap * sizeof(char *));
-  for (i = 0; i < r->size; i++) {
-    fscanf(fin, "%s\n", str);
-    r->id2table[i] = sclone(str);
+  _RID = 0;
+  return _rests;
+}
+
+void RestFree(Restaurant *_rests) {
+  int t, i;
+  Restaurant *r;
+  for (t = 0; t < 2; t++) {
+    r = &(_rests[t]);
+    for (i = 0; i < r->cap; i++) free(r->id2table[i]);
+    for (i = 0; i < r->cap; i++) free(r->id2embd[i]);
+    free(r->id2table);
+    free(r->id2cnum);
+    free(r->id2embd);
+    free(r->id2next);
+    free(r->hash2head);
+    free(r->default_embd);
   }
-  r->id2cnum = NumNewVec(r->cap);
-  sfread(r->id2cnum, sizeof(int), r->size, fin);
-  r->id2embd = (real **)malloc(r->cap * sizeof(real *));
-  for (i = 0; i < r->size; i++) {
-    r->id2embd[i] = NumNewVec(r->embd_dim);
-    sfread(r->id2embd[i], sizeof(real), r->embd_dim, fin);
-  }
-  for (i = r->size; i < r->cap; i++)
-    r->id2embd[i] = NumCloneVec(r->default_embd, r->embd_dim);
-  r->id2next = NumNewIntVec(r->cap);
-  sfread(r->id2next, sizeof(int), r->size, fin);
-  r->hash2head = NumNewIntVec(r->cap);
-  sfread(r->hash2head, sizeof(int), r->cap, fin);
-  int v, n;
-  sfread(&v, sizeof(int), 1, fin);
-  sfread(&n, sizeof(int), 1, fin);
-  *w_embd_ptr = NumNewHugeVec(v * n);
-  sfread(*w_embd_ptr, sizeof(int), v * n, fin);
-  *vptr = v;
-  *nptr = n;
-  return r;
+  free(_rests);
+  free(hash_locks);
 }
 
 #endif /* ifndef TCRP */
