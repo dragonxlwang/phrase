@@ -12,14 +12,16 @@
 #include "../utils/util_num.c"
 #include "../utils/util_text.c"
 
-void PhraseWid2Str(int *idx, int beg, int end, Vocabulary *vcb, char *s) {
-  s[0] = 0;
-  int i;
-  for (i = beg; i < end; i++) {
-    if (i != beg) saprintf(s, "=||=");
-    saprintf(s, VocabGetWord(vcb, idx[i]));
-  }
-  return;
-}
-
+#define PHRASE_WID2STR(IDS, BEG, END, VCB, STR)                \
+  ({                                                           \
+    int _i;                                                    \
+    for (_i = BEG; _i <= END; _i++) {                          \
+      if (_i == BEG) {                                         \
+        strcpy(STR, VocabGetWord(VCB, IDS[_i]));               \
+      } else {                                                 \
+        strcat(STR + strlen(STR), "=||=");                     \
+        strcat(STR + strlen(STR), VocabGetWord(VCB, IDS[_i])); \
+      }                                                        \
+    }                                                          \
+  })
 #endif /* ifndef PHRASE */

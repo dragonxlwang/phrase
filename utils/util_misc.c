@@ -77,6 +77,8 @@ int log_debug_mode = 2;
       fflush(stdout);                      \
     }                                      \
   })
+#define LOGDBG(...) LOGC(1, 'r', 'k', __VA_ARGS__)
+
 #define LOWER(c) (((c) >= 'A' && (c) <= 'Z') ? (c) - 'A' + 'a' : (c))
 #define UPPER(c) (((c) >= 'a' && (c) <= 'z') ? (c) - 'a' + 'A' : (c))
 

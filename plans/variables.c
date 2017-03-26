@@ -18,7 +18,7 @@
 
 // ---------------------------- Config Variables ------------------------------
 char *V_MODEL_DECOR_FILE_PATH = NULL;
-char *V_TEXT_FILE_PATH = "~/data/gigaword/giga_nyt.txt";  // "text8/text8"
+char *V_TEXT_FILE_PATH = "~/local/data/gigaword/giga_nyt.txt";  // "text8/text8"
 char *V_VOCAB_FILE_PATH = NULL;  // don't set it if can be inferred from above
 char *V_MODEL_SAVE_PATH = NULL;
 
@@ -52,7 +52,7 @@ int V_VOCAB_OVERWRITE = 0;
 // if load model from file instead of random initiailization
 int V_MODEL_LOAD = 0;
 int N = 100;       // embedding dimension
-int V = 100000;    // vocabulary size cap, set to -1 if no limit
+int V = 100000;    // vocabulary size cap, 100K, set to -1 if no limit
 int C = 5;         // context length
 int P = 4;         // phrase max length
 real alpha = 0.1;  // CRP prior
@@ -271,6 +271,7 @@ void VariableInit(int argc, char **argv) {
     exit(1);
   }
 
+  LOGC(0, 'g', 'k', "Variable Initialization\n");
   // use perm file instead of original
   /* V_TEXT_FILE_PATH = sformat("%s.perm", V_TEXT_FILE_PATH); */
 
@@ -300,10 +301,12 @@ void VariableInit(int argc, char **argv) {
       V = vv;
     }
   } else {
-    rest = RestCreate(V * 100, N, -model_init_amp, model_init_amp,
+    rest = RestCreate((long)V * 100, N, -model_init_amp, model_init_amp,
                       V_REST_SHRINK_RATE, V_L2_REGULARIZATION_WEIGHT,
-                      V_REST_MAX_TABLE_SIZE, V_REST_INTERVAL_SIZE);  // >>
-    w_embd = NumNewHugeVec(V * N);                                   // >>
+                      (long)V_REST_MAX_TABLE_SIZE,
+                      (long)V_REST_INTERVAL_SIZE);  // >>
+    w_embd = NumNewHugeVec(V * N);                  // >>
+    NumRandFillVec(w_embd, -model_init_amp, model_init_amp, V * N);
   }
   // initialization for negative sampler
   ns = NsInitFromVocabulary(vcb, 0.75, 1, 5);  // >>
@@ -313,6 +316,7 @@ void VariableInit(int argc, char **argv) {
   progress = (real *)malloc(V_THREAD_NUM * sizeof(real));  // >>
   NumFillZeroVec(progress, V_THREAD_NUM);
   start_clock_t = clock();
+  LOGC(0, 'g', 'k', "Variable Initialization Finished\n");
   return;
 }
 

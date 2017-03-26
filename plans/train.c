@@ -10,28 +10,20 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include "../plans/constants.c"
+#include "../plans/plans.c"
+#include "../plans/variables.c"
 #include "../utils/util_misc.c"
 #include "../utils/util_num.c"
 #include "../utils/util_text.c"
-#include "../plans/constants.c"
-#include "../plans/plans.c"
-#include "../vectors/model.c"
-#include "../vectors/peek.c"
-#include "../vectors/variables.c"
-#include "../vectors/w2v.c"
 
 void Train(int argc, char* argv[]) {
   NumInit();
   VariableInit(argc, argv);  //  >>
   MainWork prepper = NULL, cleaner = NULL;
   ThreadTrain trainer = NULL;
-  if (!strcmp(V_TRAIN_METHOD, "dcme")) {
-    trainer = DcmeThreadTrain;
-  } else if (!strcmp(V_TRAIN_METHOD, "w2v")) {
-    prepper = W2vPrep;
-    trainer = W2vThreadTrain;
-    cleaner = W2vClean;
-  }
+  trainer = PlansThreadTrain;
+  prepper = PlansPrep;
   if (prepper) prepper();
   if (trainer) {
     long int tid;
@@ -43,8 +35,8 @@ void Train(int argc, char* argv[]) {
     free(pt);  // <<
   }
   if (cleaner) cleaner();
-  ModelSave(model, -1, V_MODEL_SAVE_PATH);  // save model
-  VariableFree();                           // <<
+  RestSave(rest, w_embd, V, N, -1, V_MODEL_SAVE_PATH);  // save model
+  VariableFree();                                       // <<
   LOG(1, "\nTraining finished. Took time %s\n",
       strclock(start_clock_t, clock(), V_THREAD_NUM));
   return;
