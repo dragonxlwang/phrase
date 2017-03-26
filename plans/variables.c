@@ -58,10 +58,10 @@ int P = 4;         // phrase max length
 real alpha = 0.1;  // CRP prior
 
 // -------------------------------- Model -------------------------------------
-Vocabulary *vcb;      // vocabulary
-real *w_embd;         // word embedding (target only)
-Restaurant *rest;     // restaurant
-NegativeSampler *ns;  // negative sampler
+Vocabulary *vcb;            // vocabulary
+real *w_embd;               // word embedding (target only)
+volatile Restaurant *rest;  // restaurant
+NegativeSampler *ns;        // negative sampler
 // ---------------------------- global variables ------------------------------
 real gd_ss;             // grad descend step size
 real inv_temp;          // inverse of temperature (monotonically increasing)
@@ -321,11 +321,11 @@ void VariableInit(int argc, char **argv) {
 }
 
 void VariableFree() {
-  free(progress);  // <<
-  NsFree(ns);      // <<
-  free(w_embd);    // <<
-  RestFree(rest);  // <<
-  VocabFree(vcb);  // <<
+  free(progress);   // <<
+  NsFree(ns);       // <<
+  free(w_embd);     // <<
+  REST_FREE(rest);  // <<
+  VocabFree(vcb);   // <<
 }
 
 #endif /* ifndef VARIABLES */

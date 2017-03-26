@@ -7,7 +7,7 @@ NOEXEC ?= 0
 #Using -Ofast instead of -O3 might result in faster code,
 #but is supported only by newer GCC versions
 ifeq ($(DEBUG), 0)
-	override CFLAGS += -std=gnu99 -lm -pthread -O3 -march=native -Wall \
+	override CFLAGS += -std=gnu99 -lm -pthread -O0 -march=native -Wall \
 										 -funroll-loops  -Wno-unused-variable
 	DIR = bin
 else

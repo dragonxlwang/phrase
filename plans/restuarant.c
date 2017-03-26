@@ -183,6 +183,22 @@ real **RestReallocId2Embd(real **id2embd, long old_size, long new_cap,
                                                      : (*R_PTR)->id2embd[I]), \
              (*R_PTR)->embd_dim)
 
+//// free
+
+#define REST_FREE(R)                                       \
+  ({                                                       \
+    int _i;                                                \
+    for (_i = 0; _i < R->cap; _i++) free(R->id2table[_i]); \
+    for (_i = 0; _i < R->cap; _i++) free(R->id2embd[_i]);  \
+    free(R->id2table);                                     \
+    free(R->id2cnum);                                      \
+    free(R->id2embd);                                      \
+    free(R->id2next);                                      \
+    free(R->hash2head);                                    \
+    free(R->default_embd);                                 \
+    free(R);                                               \
+  })
+
 //// check allocation
 
 #define REST_CHECK_ALLOCATION(R)            \
@@ -268,20 +284,6 @@ Restaurant *RestCreate(long cap, int embd_dim, real init_lb, real init_ub,
   return r;
 }
 
-void RestFree(Restaurant *r) {
-  int i;
-  for (i = 0; i < r->cap; i++) free(r->id2table[i]);
-  for (i = 0; i < r->cap; i++) free(r->id2embd[i]);
-  free(r->id2table);
-  free(r->id2cnum);
-  free(r->id2embd);
-  free(r->id2next);
-  free(r->hash2head);
-  free(r->default_embd);
-  free(r);
-  return;
-}
-
 void RestResize(Restaurant **rptr, int cap) {
   if (pthread_mutex_trylock(&rest_lock) != 0) {
     return;  // mutex not locked
@@ -322,7 +324,7 @@ void RestResize(Restaurant **rptr, int cap) {
   // add free_lock to avoid accessing invalid restaurant
   /* pthread_mutex_lock(&free_lock); */
   *rptr = nr;
-  RestFree(r);
+  REST_FREE(r);
   /* pthread_mutex_unlock(&free_lock); */
 
   pthread_mutex_unlock(&rest_lock);
@@ -338,16 +340,18 @@ void RestReduce(Restaurant **rptr) {
     return;  // mutex not locked
   }
 
-  LOG(0, "reduce lock\n");
+  LOG(0, "=======>>> REDUCE LOCK\n");
 
   Restaurant *r = *rptr;
   // reduce the number of table to max_table_num
   int i, j, k;
 
-  LOGDBG("Reduce cust=%d size=%d interval=%d pid=%ld\n", (int)r->customer_cnt,
+  LOGDBG("Reduce cust=%d size=%d interval=%d pid=%ld ", (int)r->customer_cnt,
          (int)r->size, (int)r->interval_size, (long int)pthread_self());
 
   if (r->size <= r->max_table_num) {
+    LOGC(0, 'c', 'k', "Shrink only\n");
+
     r->customer_cnt = 0;
     for (i = 0; i < r->size; i++) {
       r->id2cnum[i] *= r->shrink_rate;
@@ -356,6 +360,7 @@ void RestReduce(Restaurant **rptr) {
   } else {
     pair *sorted_pairs = RestSort(r, r->size);  // no need to free
 
+    LOGC(0, 'g', 'k', "Remove and Shrink: ");
     LOGDBG("[%d] sorting: size = %d\n", reduce_cnt, r->size);
 
     Restaurant *nr = (Restaurant *)malloc(sizeof(Restaurant));
@@ -369,6 +374,8 @@ void RestReduce(Restaurant **rptr) {
     nr->max_table_num = r->max_table_num;
     nr->interval_size = r->interval_size;
 
+    LOGC(0, 'y', 'k', "   Check 1: Pass declaration\n");
+
     nr->id2table =
         RestReallocId2Table(r->id2table, nr->size, nr->cap, sorted_pairs);
     nr->id2cnum =
@@ -378,24 +385,33 @@ void RestReduce(Restaurant **rptr) {
                            nr->embd_dim, sorted_pairs);
     nr->id2next = RestAllocId2Next(nr->cap);
     nr->hash2head = RestAllocHash2Head(nr->cap);
+
+    LOGC(0, 'y', 'k', "   Check 2: Pass reallocation\n");
+
     for (i = 0; i < nr->size; i++) {
       REST_BKDR_LINK(nr->id2table[i], i, nr->cap, nr->id2next, nr->hash2head);
     }
 
+    LOGC(0, 'y', 'k', "   Check 3: Pass hash linking\n");
+
     REST_CHECK_ALLOCATION(nr);
+
+    LOGC(0, 'y', 'k', "   Check 4: Pass allocation checks\n");
 
     // add free_lock to avoid accessing invalid restaurant
     /* pthread_mutex_lock(&free_lock); */
     *rptr = nr;
-    RestFree(r);
+    REST_FREE(r);
     /* pthread_mutex_unlock(&free_lock); */
+
+    LOGC(0, 'y', 'k', "   Check 5: Pass old restaurant free\n");
 
     reduce_cnt++;
   }
 
   pthread_mutex_unlock(&rest_lock);
 
-  LOG(0, "reduce unlock\n");
+  LOG(0, "=======<<< REDUCE UNLOCK\n");
 
   return;
 }
