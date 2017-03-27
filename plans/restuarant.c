@@ -372,7 +372,7 @@ void RestSave(Restaurant *_rests, real *w_embd, int v, int n, int iter_num,
   fwrite(&cap, sizeof(long), 1, fout);
   fwrite(&r->customer_cnt, sizeof(long), 1, fout);
   for (i = 0; i < size; i++) fprintf(fout, "%s\n", r->id2table[i]);
-  fwrite(r->id2cnum, sizeof(int), size, fout);
+  fwrite(r->id2cnum, sizeof(real), size, fout);
   for (i = 0; i < size; i++)
     fwrite(r->id2embd[i], sizeof(real), r->embd_dim, fout);
   fwrite(r->id2next, sizeof(int), size, fout);
@@ -384,7 +384,7 @@ void RestSave(Restaurant *_rests, real *w_embd, int v, int n, int iter_num,
   fclose(fout);
   free(rfp);
   if (iter_num == -1) {  // print only when saving final model
-    LOGC(1, 'c', 'k', "[REST]: Save to %s\n", fp);
+    LOGC(1, 'c', 'k', "\n\n[REST]: Save to %s\n", fp);
     LOGC(1, 'c', 'k', "[REST]: size = %d, cap = %d, v = %d, n = %d\n", size,
          cap, v, n);
   }
@@ -399,6 +399,7 @@ Restaurant *RestLoad(char *fp, real **w_embd_ptr, int *nptr, int *vptr) {
   Restaurant *r;
   for (t = 0; t < 2; t++) {
     FILE *fin = fopen(fp, "rb");
+    LOG(0, "Loading from %s\n", fp);
     if (!fin) {
       LOG(0, "Error!\n");
       exit(1);
@@ -422,7 +423,7 @@ Restaurant *RestLoad(char *fp, real **w_embd_ptr, int *nptr, int *vptr) {
       _strcpy(r->id2table[i], str);
     }
     r->id2cnum = RestAllocId2Cnum(r->cap);
-    sfread(r->id2cnum, sizeof(int), r->size, fin);
+    sfread(r->id2cnum, sizeof(real), r->size, fin);
     r->id2embd = RestAllocId2Embd(r->cap, r->default_embd, r->embd_dim);
     for (i = 0; i < r->size; i++)
       sfread(r->id2embd[i], sizeof(real), r->embd_dim, fin);
@@ -434,7 +435,7 @@ Restaurant *RestLoad(char *fp, real **w_embd_ptr, int *nptr, int *vptr) {
       sfread(&v, sizeof(int), 1, fin);
       sfread(&n, sizeof(int), 1, fin);
       *w_embd_ptr = NumNewHugeVec(v * n);
-      sfread(*w_embd_ptr, sizeof(int), v * n, fin);
+      sfread(*w_embd_ptr, sizeof(real), v * n, fin);
       *vptr = v;
       *nptr = n;
       hash_locks = RestAllocLocks(r->cap);

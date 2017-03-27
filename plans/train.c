@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////////////
 // Copyright (c) 2016 Xiaolong Wang All Rights Reserved.        //
-// Code for ``Dual Clustered Maximal Entropy for Many Classes'' //
+// Code for ``Phrasal Latent Attachment and Negative Sampling'' //
 //////////////////////////////////////////////////////////////////
 
 #include <math.h>
