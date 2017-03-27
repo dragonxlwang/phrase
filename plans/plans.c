@@ -42,11 +42,16 @@ void PlansThreadPrintProgBar(int dbg_lvl, int tid, real p) {
   saprintf(str, "TIME:%.2e/%s ", st, ht);                   // time
   saprintf(str, "GDSS:%.4e ", gd_ss);                       // gdss
   free(ht);
-  saprintfc(str, 'c', 'k', "W_EMBD:%.4e (%.2e) ", NumVecNorm(w_embd, V * N),
+  double w_embd_total_norm = NumVecNorm(w_embd, V * N);
+  saprintfc(str, 'c', 'k', "W_EMBD: %.4e=%.2e/%.2e ",
+            w_embd_total_norm / (V + 1e-6), w_embd_total_norm,
             (double)V);  // w_embd
-  saprintfc(str, 'r', 'k', "REST%d:%.4e (%.2e)", _RID, REST_NORM(CUR_REST),
-            (double)CUR_REST->size);  // w_embd
-  LOGCR(dbg_lvl);
+  double rest_total_norm = REST_NORM(CUR_REST);
+  double rest_size = CUR_REST->size;
+  saprintfc(str, 'r', 'k', "REST[%d]: %.4e=%.2e/%.2e", _RID,
+            rest_total_norm / (rest_size + 1e-6), rest_total_norm,
+            rest_size);  // w_embd
+  LOGCLR(dbg_lvl);
   LOG(dbg_lvl, "%s\n", str);
   pthread_mutex_unlock(&print_lock);
 }
@@ -62,7 +67,7 @@ void PlansOptmLL(real *scr_embd, int wid, int is_positive, real d) {
   real *tar_embd = w_embd + wid * N;
   real x = NumVecDot(scr_embd, tar_embd, N);
   x = (is_positive ? 1.0 : 0.0) - NumSigmoid(x);
-  x = x * gd_ss / d;
+  x *= gd_ss / d;
   NumVecAddCVec(scr_embd, tar_embd, x, N);
   if (V_MODEL_PROJ_BALL_NORM > 0)
     NumVecProjUnitBall(scr_embd, V_MODEL_PROJ_BALL_NORM, N);

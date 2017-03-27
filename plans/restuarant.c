@@ -20,6 +20,7 @@
 
 pthread_mutex_t rest_lock;
 pthread_mutex_t *hash_locks;
+int _RID = 0;
 
 typedef struct Restaurant {
   char **id2table;  // do not need to rewrite
@@ -39,8 +40,6 @@ typedef struct Restaurant {
   long interval_size;
   //////////////////////////////
 } Restaurant;
-
-int _RID = 0;
 
 //// Allocation
 
@@ -92,7 +91,7 @@ pthread_mutex_t *RestAllocLocks(long cap) {
   for (i = 0; i < cap; i++) {
     if (pthread_mutex_init(&(locks[i]), NULL) != 0) {
       LOG(0, "mutex lock at %d init failed\n", i);
-      return NULL;
+      exit(1);
     }
   }
   return locks;
@@ -289,7 +288,7 @@ Restaurant *RestCreate(long cap, int embd_dim, real init_lb, real init_ub,
   _RID = 0;
   if (pthread_mutex_init(&rest_lock, NULL) != 0) {
     LOG(0, "[Restaurant] Mutex init failed\n");
-    return NULL;
+    exit(1);
   }
   free(default_embd);
 
@@ -298,28 +297,17 @@ Restaurant *RestCreate(long cap, int embd_dim, real init_lb, real init_ub,
   return _rests;
 }
 
-int reduce_cnt = 0;
+int _REDUCE_CNT = 0;
 void RestReduce(Restaurant *some_rest) {
   if (pthread_mutex_trylock(&rest_lock) != 0) {
     return;  // mutex not locked
   }
-
-  LOG(0, "=======>>> REDUCE LOCK, _RID = %d\n", _RID);
+  // infer the _RID, current and backup restaurant: omit check r = some_rest
   Restaurant *_rests = ((_RID == 0) ? some_rest : (some_rest - 1));
   Restaurant *r = &(_rests[_RID]);
   Restaurant *nr = &(_rests[1 - _RID]);
-  LOGC(0, 'b', 'k', "_RID = %d, size: %d, %d\n", _RID, r->size, nr->size);
-
-  // reduce the number of table to max_table_num
-  int i, j, k;
-
-  LOGDBG("Reduce cust=%d size=%d interval=%d pid=%ld _RID=%d ",
-         (int)r->customer_cnt, (int)r->size, (int)r->interval_size,
-         (long int)pthread_self(), _RID);
-
+  int i;
   if (r->size <= r->max_table_num) {
-    LOGC(0, 'c', 'k', "Shrink only\n");
-
     r->customer_cnt = 0;
     for (i = 0; i < r->size; i++) {
       r->id2cnum[i] *= r->shrink_rate;
@@ -330,50 +318,23 @@ void RestReduce(Restaurant *some_rest) {
     nr->size = r->max_table_num / 2;
     nr->customer_cnt = 0;
 
-    LOGC(0, 'g', 'k', "Remove and Shrink\n");
-    LOGC(0, 'y', 'k', "   [%d] size  %d => %d\n", reduce_cnt, r->size,
-         nr->size);
-
-    LOGC(0, 'y', 'k', "   Check 1: Pass declaration\n");
-
     RestReallocId2Table(nr->id2table, r->id2table, nr->size, sorted_pairs);
-
-    LOGC(0, 'y', 'k', "   Check 2.1: id2table finish\n");
-
     RestReallocId2Cnum(nr->id2cnum, r->id2cnum, nr->size, sorted_pairs);
-
-    LOGC(0, 'y', 'k', "   Check 2.2: id2cnum finish\n");
-
     RestReallocId2Embd(nr->id2embd, r->id2embd, nr->size, nr->embd_dim,
                        sorted_pairs);
-
-    LOGC(0, 'y', 'k', "   Check 2.3: id2embd finish\n");
-
     RestInitHash2Head(nr->hash2head, nr->cap);
-
-    LOGC(0, 'y', 'k', "   Check 2.4: has2head finish\n");
-
     // TODO(xlwang): assuming that at reducing time, the back-up restaurant is
     // not accessed by any other threads
     for (i = 0; i < nr->size; i++) {
       REST_BKDR_LINK_NO_LOCK(nr->id2table[i], i, nr);
     }
-
-    LOGC(0, 'y', 'k', "   Check 3: Pass hash linking\n");
-
     _RID = 1 - _RID;
-
-    reduce_cnt++;
+    _REDUCE_CNT++;
   }
-
-  LOG(0, "=======<<< REDUCE UNLOCK\n");
-
   pthread_mutex_unlock(&rest_lock);
 
   return;
 }
-
-// use real to return since we need it for compute probability anyways
 
 void RestSave(Restaurant *_rests, real *w_embd, int v, int n, int iter_num,
               char *fp) {
@@ -394,7 +355,6 @@ void RestSave(Restaurant *_rests, real *w_embd, int v, int n, int iter_num,
   }
 
   pthread_mutex_lock(&rest_lock);
-
   FILE *fout = fopen(rfp, "wb");
   if (!fout) {
     LOG(0, "Error!\n");
@@ -403,7 +363,6 @@ void RestSave(Restaurant *_rests, real *w_embd, int v, int n, int iter_num,
   int i;
   int size = r->size;
   int cap = r->cap;
-
   fwrite(&r->embd_dim, sizeof(int), 1, fout);
   fwrite(r->default_embd, sizeof(real), r->embd_dim, fout);
   fwrite(&r->shrink_rate, sizeof(real), 1, fout);
@@ -420,7 +379,7 @@ void RestSave(Restaurant *_rests, real *w_embd, int v, int n, int iter_num,
     fwrite(r->id2embd[i], sizeof(real), r->embd_dim, fout);
   fwrite(r->id2next, sizeof(int), size, fout);
   fwrite(r->hash2head, sizeof(int), cap, fout);
-
+  //////////////////////////////
   fwrite(&v, sizeof(int), 1, fout);
   fwrite(&n, sizeof(int), 1, fout);
   fwrite(w_embd, sizeof(real), v * n, fout);
@@ -431,9 +390,7 @@ void RestSave(Restaurant *_rests, real *w_embd, int v, int n, int iter_num,
     LOGC(1, 'c', 'k', "[REST]: size = %d, cap = %d, v = %d, n = %d\n", size,
          cap, v, n);
   }
-
   pthread_mutex_unlock(&rest_lock);
-
   return;
 }
 
@@ -461,22 +418,19 @@ Restaurant *RestLoad(char *fp, real **w_embd_ptr, int *nptr, int *vptr) {
     sfread(&r->cap, sizeof(long), 1, fin);
     sfread(&r->customer_cnt, sizeof(long), 1, fin);
     r->id2table = (char **)malloc(r->cap * sizeof(char *));
+    r->id2table = RestAllocId2Table(r->cap);
     for (i = 0; i < r->size; i++) {
       fscanf(fin, "%s\n", str);
-      r->id2table[i] = sclone(str);
+      _strcpy(r->id2table[i], str);
     }
-    r->id2cnum = NumNewVec(r->cap);
+    r->id2cnum = RestAllocId2Cnum(r->cap);
     sfread(r->id2cnum, sizeof(int), r->size, fin);
-    r->id2embd = (real **)malloc(r->cap * sizeof(real *));
-    for (i = 0; i < r->size; i++) {
-      r->id2embd[i] = NumNewVec(r->embd_dim);
+    r->id2embd = RestAllocId2Embd(r->cap, r->default_embd, r->embd_dim);
+    for (i = 0; i < r->size; i++)
       sfread(r->id2embd[i], sizeof(real), r->embd_dim, fin);
-    }
-    for (i = r->size; i < r->cap; i++)
-      r->id2embd[i] = NumCloneVec(r->default_embd, r->embd_dim);
-    r->id2next = NumNewIntVec(r->cap);
+    r->id2next = RestAllocId2Next(r->cap);
     sfread(r->id2next, sizeof(int), r->size, fin);
-    r->hash2head = NumNewIntVec(r->cap);
+    r->hash2head = RestAllocHash2Head(r->cap);
     sfread(r->hash2head, sizeof(int), r->cap, fin);
     if (t == 0) {
       sfread(&v, sizeof(int), 1, fin);
@@ -486,10 +440,14 @@ Restaurant *RestLoad(char *fp, real **w_embd_ptr, int *nptr, int *vptr) {
       *vptr = v;
       *nptr = n;
       hash_locks = RestAllocLocks(r->cap);
+      _RID = 0;
+      if (pthread_mutex_init(&rest_lock, NULL) != 0) {
+        LOG(0, "[Restaurant] Mutex init failed\n");
+        exit(1);
+      }
     }
     fclose(fin);
   }
-  _RID = 0;
   return _rests;
 }
 

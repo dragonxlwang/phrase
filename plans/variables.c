@@ -291,7 +291,6 @@ void VariableInit(int argc, char **argv) {
   if (V_MODEL_LOAD && fexists(V_MODEL_SAVE_PATH)) {
     int nn, vv;
     rests = RestLoad(V_MODEL_SAVE_PATH, &w_embd, &nn, &vv);
-
     if (N != nn) {
       LOGC(0, 'r', 'k', "[MODEL]: overwrite N from %d to %d\n", N, nn);
       N = nn;
@@ -309,13 +308,12 @@ void VariableInit(int argc, char **argv) {
     NumRandFillVec(w_embd, -model_init_amp, model_init_amp, V * N);
   }
   // initialization for negative sampler
-  ns = NsInitFromVocabulary(vcb, 0.75, 1, 5);  // >>
-
-  gd_ss = V_INIT_GRAD_DESCENT_STEP_SIZE;  // gd_ss
-  inv_temp = 1;
+  ns = NsInitFromVocabulary(vcb, 0.75, 1, 5);              // >>
+  gd_ss = V_INIT_GRAD_DESCENT_STEP_SIZE;                   // gd_ss
+  inv_temp = 1;                                            // temp
   progress = (real *)malloc(V_THREAD_NUM * sizeof(real));  // >>
-  NumFillZeroVec(progress, V_THREAD_NUM);
-  start_clock_t = clock();
+  NumFillZeroVec(progress, V_THREAD_NUM);                  //
+  start_clock_t = clock();                                 // clock
   LOGC(0, 'g', 'k', "Variable Initialization Finished\n");
   return;
 }
