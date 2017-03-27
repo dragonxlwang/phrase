@@ -16,7 +16,7 @@
 #define CHECK_ALLOCATE_STATUS(x) \
   if (!x) LOG(0, "Error: Allocation failed for " #x "\n");
 
-void _strcpy(char *dest, char *scr) { strncpy(dest, scr, MAX_PHRASE_LEN); }
+#define _strcpy(dest, scr) strncpy(dest, scr, MAX_PHRASE_LEN);
 
 pthread_mutex_t rest_lock;
 pthread_mutex_t *hash_locks;
@@ -78,6 +78,7 @@ int *RestAllocId2Next(long cap) {
 void RestInitHash2Head(int *hash2head, long cap) {
   memset(hash2head, 0xFF, cap * sizeof(int));
 }
+
 int *RestAllocHash2Head(long cap) {
   int *hash2head = NumNewIntVec(cap);
   RestInitHash2Head(hash2head, cap);
@@ -147,12 +148,16 @@ void RestReallocId2Embd(real **new_id2embd, real **id2embd, long old_size,
   })
 
 // link string S at position I in restuarnt R
+// no lock: used only in reduce where we (almost) sure that there's no
+// contention
 #define REST_BKDR_LINK_NO_LOCK(S, I, R) \
   ({                                    \
     int _h = REST_BKDR_HASH(S, R->cap); \
     R->id2next[I] = R->hash2head[_h];   \
     R->hash2head[_h] = R->id2next[I];   \
   })
+// hash lock: used when multiple threads are locate and add. per slot has a
+// lock; if memory is limited, multiple slots can share one lock
 #define REST_BKDR_LINK(S, I, R)              \
   ({                                         \
     int _h = REST_BKDR_HASH(S, R->cap);      \
@@ -163,22 +168,20 @@ void RestReallocId2Embd(real **new_id2embd, real **id2embd, long old_size,
   })
 
 // TODO(xlwang): might want to append instead of prepend
-real _link_total = 1;
-real _link_error = 0;
-#define REST_LOCATE(R, S)                                             \
-  ({                                                                  \
-    int _h = REST_BKDR_HASH(S, R->cap);                               \
-    int _i = R->hash2head[_h];                                        \
-    int _step = 0;                                                    \
-    while (_i != -1 && _i < R->size && !strcmp(R->id2table[_i], S) && \
-           _step++ < 100) {                                           \
-      _i = R->id2next[_i];                                            \
-    }                                                                 \
-    if (_step >= 100) {                                               \
-      _link_error += 1;                                               \
-    }                                                                 \
-    _link_total += 1;                                                 \
-    (_i < R->size && _step < 100) ? _i : -1;                          \
+// in general, it is expected steps would be smaller if we use appending since
+// new added items are more likely to be fetched again soon
+// Since REST_BKDR_HASH has hash lock, it is much less likely that the linked
+// list is polluted and _step can be removed
+#define REST_LOCATE(R, S)                               \
+  ({                                                    \
+    int _h = REST_BKDR_HASH(S, R->cap);                 \
+    int _i = R->hash2head[_h];                          \
+    int _step = 0;                                      \
+    while (_i != -1 && _i < R->size && _step++ < 100 && \
+           !strcmp(R->id2table[_i], S)) {               \
+      _i = R->id2next[_i];                              \
+    }                                                   \
+    (_i < R->size && _step < 100) ? _i : -1;            \
   })
 
 #define REST_LOCATE_AND_ADD(R, S)                               \
@@ -257,11 +260,12 @@ Restaurant *RestCreate(long cap, int embd_dim, real init_lb, real init_ub,
 
   int t;
   Restaurant *_rests = (Restaurant *)malloc(sizeof(Restaurant) * 2);
-  if (cap < 0) cap = 0xFFFFF;  // default 1M
 
+  if (cap < 0) cap = 0xFFFFF;  // default 1M
   Restaurant *r;
   real *default_embd = NumNewVec(embd_dim);
   NumRandFillVec(default_embd, embd_dim, init_lb, init_ub);
+
   for (t = 0; t < 2; t++) {
     r = &(_rests[t]);
     r->size = 0;
@@ -278,20 +282,18 @@ Restaurant *RestCreate(long cap, int embd_dim, real init_lb, real init_ub,
     r->id2embd = RestAllocId2Embd(cap, r->default_embd, r->embd_dim);
     r->id2next = RestAllocId2Next(cap);
     r->hash2head = RestAllocHash2Head(cap);
-    hash_locks = RestAllocLocks(cap);  // size 40
     REST_CHECK_ALLOCATION(r);
   }
-  _RID = 0;
 
+  hash_locks = RestAllocLocks(cap);  // size 40
+  _RID = 0;
   if (pthread_mutex_init(&rest_lock, NULL) != 0) {
     LOG(0, "[Restaurant] Mutex init failed\n");
     return NULL;
   }
-
   free(default_embd);
 
-  LOG(2, "[Restaurant] Create Finished\n");
-  LOGC(0, 'b', 'k', "address: %ld %ld, size = %d %d\n", &(_rests[0]),
+  LOGC(0, 'b', 'k', "    address: %ld %ld, size = %d %d\n", &(_rests[0]),
        &(_rests[1]), _rests[0].size, _rests[1].size);
   return _rests;
 }
@@ -364,8 +366,6 @@ void RestReduce(Restaurant *some_rest) {
     reduce_cnt++;
   }
 
-  LOGC(0, 'y', 'k', "   Linking Errors: %e / %e = %e\n", _link_error,
-       _link_total, _link_error / _link_total);
   LOG(0, "=======<<< REDUCE UNLOCK\n");
 
   pthread_mutex_unlock(&rest_lock);

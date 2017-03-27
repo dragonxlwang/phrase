@@ -22,7 +22,7 @@ char *V_TEXT_FILE_PATH = "~/local/data/gigaword/giga_nyt.txt";  // "text8/text8"
 char *V_VOCAB_FILE_PATH = NULL;  // don't set it if can be inferred from above
 char *V_MODEL_SAVE_PATH = NULL;
 
-int V_THREAD_NUM = 40;
+int V_THREAD_NUM = 45;  // devbig has 48 cores
 int V_ITER_NUM = 10;
 
 // Initial grad descent step size
