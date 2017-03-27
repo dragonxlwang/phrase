@@ -405,33 +405,47 @@ Restaurant *RestLoad(char *fp, real **w_embd_ptr, int *nptr, int *vptr) {
       exit(1);
     }
     r = &(_rests[t]);
+    LOGC(0, 'c', 'k', "Loading embd_dim\n");
     sfread(&r->embd_dim, sizeof(int), 1, fin);
     r->default_embd = NumNewVec(r->embd_dim);
+    LOGC(0, 'c', 'k', "Loading default_embd\n");
     sfread(r->default_embd, sizeof(real), r->embd_dim, fin);
+    LOGC(0, 'c', 'k', "Loading shrink_rate\n");
     sfread(&r->shrink_rate, sizeof(real), 1, fin);
+    LOGC(0, 'c', 'k', "Loading l2w\n");
     sfread(&r->l2w, sizeof(real), 1, fin);
+    LOGC(0, 'c', 'k', "Loading max_table_num\n");
     sfread(&r->max_table_num, sizeof(long), 1, fin);
+    LOGC(0, 'c', 'k', "Loading interval_size\n");
     sfread(&r->interval_size, sizeof(long), 1, fin);
     //////////////////////////////
+    LOGC(0, 'c', 'k', "Loading size\n");
     sfread((void *)&r->size, sizeof(long), 1, fin);
+    LOGC(0, 'c', 'k', "Loading cap\n");
     sfread(&r->cap, sizeof(long), 1, fin);
+    LOGC(0, 'c', 'k', "Loading customer_cnt\n");
     sfread(&r->customer_cnt, sizeof(long), 1, fin);
-    r->id2table = (char **)malloc(r->cap * sizeof(char *));
+    LOGC(0, 'c', 'k', "Loading id2table\n");
     r->id2table = RestAllocId2Table(r->cap);
     for (i = 0; i < r->size; i++) {
       fscanf(fin, "%s\n", str);
       _strcpy(r->id2table[i], str);
     }
+    LOGC(0, 'c', 'k', "Loading id2cnum\n");
     r->id2cnum = RestAllocId2Cnum(r->cap);
     sfread(r->id2cnum, sizeof(real), r->size, fin);
+    LOGC(0, 'c', 'k', "Loading id2embd\n");
     r->id2embd = RestAllocId2Embd(r->cap, r->default_embd, r->embd_dim);
     for (i = 0; i < r->size; i++)
       sfread(r->id2embd[i], sizeof(real), r->embd_dim, fin);
+    LOGC(0, 'c', 'k', "Loading id2next\n");
     r->id2next = RestAllocId2Next(r->cap);
     sfread(r->id2next, sizeof(int), r->size, fin);
+    LOGC(0, 'c', 'k', "Loading hash2head\n");
     r->hash2head = RestAllocHash2Head(r->cap);
     sfread(r->hash2head, sizeof(int), r->cap, fin);
     if (t == 0) {
+      LOGC(0, 'c', 'k', "Loading w_embd\n");
       sfread(&v, sizeof(int), 1, fin);
       sfread(&n, sizeof(int), 1, fin);
       *w_embd_ptr = NumNewHugeVec(v * n);
