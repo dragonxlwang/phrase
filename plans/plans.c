@@ -52,7 +52,8 @@ void PlansThreadPrintProgBar(int dbg_lvl, int tid, real p) {
             rest_total_norm / (rest_size + 1e-6), rest_total_norm,
             rest_size);  // w_embd
   LOGCLR(dbg_lvl);
-  LOG(dbg_lvl, "%s\n", str);
+  LOG(dbg_lvl, "%s", str);
+  /* LOG(dbg_lvl, "\n"); */
   pthread_mutex_unlock(&print_lock);
 }
 

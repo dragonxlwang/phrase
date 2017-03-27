@@ -16,6 +16,7 @@
 #include "phrase.c"
 #include "restuarant.c"
 
+#define _V 0.1e6
 // ---------------------------- Config Variables ------------------------------
 char *V_MODEL_DECOR_FILE_PATH = NULL;
 char *V_TEXT_FILE_PATH = "~/local/data/gigaword/giga_nyt.txt";  // "text8/text8"
@@ -25,6 +26,12 @@ char *V_MODEL_SAVE_PATH = NULL;
 int V_THREAD_NUM = 45;  // devbig has 48 cores
 int V_ITER_NUM = 10;
 
+int N = 100;       // embedding dimension
+int V = _V;        // vocabulary size cap, 100K, set to -1 if no limit
+int C = 5;         // context length
+int P = 4;         // phrase max length
+real alpha = 0.1;  // CRP prior
+
 // Initial grad descent step size
 real V_INIT_GRAD_DESCENT_STEP_SIZE = 1e-4;
 // final inverse temperature, log-linear monotonically increasing from 1
@@ -32,9 +39,9 @@ real V_FINAL_INV_TEMP = 5;
 // shrink rate for customer number
 real V_REST_SHRINK_RATE = 0.99;
 // interval size between shrink in restaurant
-real V_REST_INTERVAL_SIZE = 0.5e6;
+real V_REST_INTERVAL_SIZE = 5 * _V;
 // max number of tables in restaurant
-real V_REST_MAX_TABLE_SIZE = 1.5e6;
+real V_REST_MAX_TABLE_SIZE = 15 * _V;
 // Model Shrink: l-2 regularization:
 real V_L2_REGULARIZATION_WEIGHT = -1;  // 1e-3;
 // Model Shrink: if proj model to ball with specified norm, -1 if not proj
@@ -51,11 +58,6 @@ int V_CACHE_INTERMEDIATE_MODEL = 1;
 int V_VOCAB_OVERWRITE = 0;
 // if load model from file instead of random initiailization
 int V_MODEL_LOAD = 0;
-int N = 100;       // embedding dimension
-int V = 0.1e6;     // vocabulary size cap, 100K, set to -1 if no limit
-int C = 5;         // context length
-int P = 4;         // phrase max length
-real alpha = 0.1;  // CRP prior
 
 // -------------------------------- Model -------------------------------------
 Vocabulary *vcb;      // vocabulary
@@ -300,7 +302,7 @@ void VariableInit(int argc, char **argv) {
       V = vv;
     }
   } else {
-    rests = RestCreate((long)V * 30, N, -model_init_amp, model_init_amp,
+    rests = RestCreate((long)V * 50, N, -model_init_amp, model_init_amp,
                        V_REST_SHRINK_RATE, V_L2_REGULARIZATION_WEIGHT,
                        (long)V_REST_MAX_TABLE_SIZE,
                        (long)V_REST_INTERVAL_SIZE);  // >>

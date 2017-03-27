@@ -40,6 +40,7 @@ typedef struct Restaurant {
   long interval_size;
   //////////////////////////////
 } Restaurant;
+Restaurant *_INTERNAL_RESTS;
 
 //// Allocation
 
@@ -183,24 +184,26 @@ void RestReallocId2Embd(real **new_id2embd, real **id2embd, long old_size,
     (_i < R->size && _step < 100) ? _i : -1;            \
   })
 
-#define REST_LOCATE_AND_ADD(R, S)                               \
-  ({                                                            \
-    if (R->customer_cnt++ > R->interval_size) RestReduce(R);    \
-    if (R->size >= R->cap) {                                    \
-      LOG(0, "restaurant size exceeds\n");                      \
-      exit(1);                                                  \
-    }                                                           \
-    int _i = REST_LOCATE(R, S);                                 \
-    if (_i == -1) {                                             \
-      _i = R->size++;                                           \
-      _strcpy(R->id2table[_i], S);                              \
-      R->id2cnum[_i] = 1;                                       \
-      NumCopyVec(R->id2embd[_i], R->default_embd, R->embd_dim); \
-      REST_BKDR_LINK(S, _i, R);                                 \
-    } else if (_i < R->size) {                                  \
-      R->id2cnum[_i] += 1;                                      \
-    }                                                           \
-    _i;                                                         \
+#define REST_LOCATE_AND_ADD(R, S)                                              \
+  ({                                                                           \
+    if ((R->customer_cnt = R->customer_cnt + 1) > R->interval_size)            \
+      RestReduce();                                                            \
+    if (R->size >= R->cap) {                                                   \
+      LOG(0, "restaurant size exceeds: size=%ld, cap=%ld\n", R->size, R->cap); \
+      exit(1);                                                                 \
+    }                                                                          \
+    int _i = REST_LOCATE(R, S);                                                \
+    if (_i == -1) {                                                            \
+      _i = R->size;                                                            \
+      R->size = _i + 1;                                                        \
+      _strcpy(R->id2table[_i], S);                                             \
+      R->id2cnum[_i] = 1;                                                      \
+      NumCopyVec(R->id2embd[_i], R->default_embd, R->embd_dim);                \
+      REST_BKDR_LINK(S, _i, R);                                                \
+    } else if (_i < R->size) {                                                 \
+      R->id2cnum[_i] += 1;                                                     \
+    }                                                                          \
+    _i;                                                                        \
   })
 
 #define REST_ID2CNUM(R, I) ((I == -1 || I >= R->size) ? 0 : R->id2cnum[I])
@@ -256,15 +259,12 @@ Restaurant *RestCreate(long cap, int embd_dim, real init_lb, real init_ub,
                        real shrink_rate, real l2w, long max_table_num,
                        long interval_size) {
   LOG(2, "[Restaurant] Create with cap = %ld\n", cap);
-
   int t;
   Restaurant *_rests = (Restaurant *)malloc(sizeof(Restaurant) * 2);
-
   if (cap < 0) cap = 0xFFFFF;  // default 1M
   Restaurant *r;
   real *default_embd = NumNewVec(embd_dim);
   NumRandFillVec(default_embd, embd_dim, init_lb, init_ub);
-
   for (t = 0; t < 2; t++) {
     r = &(_rests[t]);
     r->size = 0;
@@ -283,7 +283,6 @@ Restaurant *RestCreate(long cap, int embd_dim, real init_lb, real init_ub,
     r->hash2head = RestAllocHash2Head(cap);
     REST_CHECK_ALLOCATION(r);
   }
-
   hash_locks = RestAllocLocks(cap);  // size 40
   _RID = 0;
   if (pthread_mutex_init(&rest_lock, NULL) != 0) {
@@ -291,21 +290,21 @@ Restaurant *RestCreate(long cap, int embd_dim, real init_lb, real init_ub,
     exit(1);
   }
   free(default_embd);
-
   LOGC(0, 'b', 'k', "    address: %ld %ld, size = %d %d\n", &(_rests[0]),
        &(_rests[1]), _rests[0].size, _rests[1].size);
+  _INTERNAL_RESTS = _rests;
   return _rests;
 }
 
 int _REDUCE_CNT = 0;
-void RestReduce(Restaurant *some_rest) {
+void RestReduce() {
   if (pthread_mutex_trylock(&rest_lock) != 0) {
     return;  // mutex not locked
   }
   // infer the _RID, current and backup restaurant: omit check r = some_rest
-  Restaurant *_rests = ((_RID == 0) ? some_rest : (some_rest - 1));
-  Restaurant *r = &(_rests[_RID]);
-  Restaurant *nr = &(_rests[1 - _RID]);
+  Restaurant *r = &(_INTERNAL_RESTS[_RID]);
+  Restaurant *nr = &(_INTERNAL_RESTS[1 - _RID]);
+  /* LOGC(0, 'y', 'k', "_RID=%d, size=%ld\n", _RID, r->size); */
   int i;
   if (r->size <= r->max_table_num) {
     r->customer_cnt = 0;
@@ -317,7 +316,6 @@ void RestReduce(Restaurant *some_rest) {
     pair *sorted_pairs = RestSort(r, r->size);  // no need to free
     nr->size = r->max_table_num / 2;
     nr->customer_cnt = 0;
-
     RestReallocId2Table(nr->id2table, r->id2table, nr->size, sorted_pairs);
     RestReallocId2Cnum(nr->id2cnum, r->id2cnum, nr->size, sorted_pairs);
     RestReallocId2Embd(nr->id2embd, r->id2embd, nr->size, nr->embd_dim,
@@ -331,8 +329,8 @@ void RestReduce(Restaurant *some_rest) {
     _RID = 1 - _RID;
     _REDUCE_CNT++;
   }
+  /* LOGC(0, 'y', 'k', "Unlocking\n"); */
   pthread_mutex_unlock(&rest_lock);
-
   return;
 }
 
@@ -448,6 +446,7 @@ Restaurant *RestLoad(char *fp, real **w_embd_ptr, int *nptr, int *vptr) {
     }
     fclose(fin);
   }
+  _INTERNAL_RESTS = _rests;
   return _rests;
 }
 
