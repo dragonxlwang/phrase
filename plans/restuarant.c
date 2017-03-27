@@ -351,7 +351,6 @@ void RestSave(Restaurant *_rests, real *w_embd, int v, int n, int iter_num,
     if (r->size >= 0.9 * r->cap - 1e3) return;
     if (r->customer_cnt >= r->interval_size / 3) return;
   }
-
   pthread_mutex_lock(&rest_lock);
   FILE *fout = fopen(rfp, "wb");
   if (!fout) {
@@ -359,8 +358,8 @@ void RestSave(Restaurant *_rests, real *w_embd, int v, int n, int iter_num,
     exit(1);
   }
   int i;
-  int size = r->size;
-  int cap = r->cap;
+  long size = r->size;
+  long cap = r->cap;
   fwrite(&r->embd_dim, sizeof(int), 1, fout);
   fwrite(r->default_embd, sizeof(real), r->embd_dim, fout);
   fwrite(&r->shrink_rate, sizeof(real), 1, fout);
@@ -371,6 +370,7 @@ void RestSave(Restaurant *_rests, real *w_embd, int v, int n, int iter_num,
   fwrite(&size, sizeof(long), 1, fout);
   fwrite(&cap, sizeof(long), 1, fout);
   fwrite(&r->customer_cnt, sizeof(long), 1, fout);
+  //////////////////////////////
   for (i = 0; i < size; i++) fprintf(fout, "%s\n", r->id2table[i]);
   fwrite(r->id2cnum, sizeof(real), size, fout);
   for (i = 0; i < size; i++)
@@ -385,7 +385,7 @@ void RestSave(Restaurant *_rests, real *w_embd, int v, int n, int iter_num,
   free(rfp);
   if (iter_num == -1) {  // print only when saving final model
     LOGC(1, 'c', 'k', "\n\n[REST]: Save to %s\n", fp);
-    LOGC(1, 'c', 'k', "[REST]: size = %d, cap = %d, v = %d, n = %d\n", size,
+    LOGC(1, 'c', 'k', "[REST]: size = %ld, cap = %ld, v = %d, n = %d\n", size,
          cap, v, n);
   }
   pthread_mutex_unlock(&rest_lock);
@@ -405,45 +405,46 @@ Restaurant *RestLoad(char *fp, real **w_embd_ptr, int *nptr, int *vptr) {
       exit(1);
     }
     r = &(_rests[t]);
-    LOGC(0, 'c', 'k', "Loading embd_dim\n");
     sfread(&r->embd_dim, sizeof(int), 1, fin);
+    LOGC(0, 'c', 'k', "Loading %-50s: %d\n", "embd_dim", r->embd_dim);
     r->default_embd = NumNewVec(r->embd_dim);
-    LOGC(0, 'c', 'k', "Loading default_embd\n");
     sfread(r->default_embd, sizeof(real), r->embd_dim, fin);
-    LOGC(0, 'c', 'k', "Loading shrink_rate\n");
     sfread(&r->shrink_rate, sizeof(real), 1, fin);
-    LOGC(0, 'c', 'k', "Loading l2w\n");
+    LOGC(0, 'c', 'k', "Loading %-50s: %lf\n ", "shrink_rate", r->shrink_rate);
     sfread(&r->l2w, sizeof(real), 1, fin);
-    LOGC(0, 'c', 'k', "Loading max_table_num\n");
+    LOGC(0, 'c', 'k', "Loading %-50s: %lf\n", "l2w", r->l2w);
     sfread(&r->max_table_num, sizeof(long), 1, fin);
-    LOGC(0, 'c', 'k', "Loading interval_size\n");
+    LOGC(0, 'c', 'k', "Loading %-50s: %ld\n", "max_table_num",
+         r->max_table_num);
     sfread(&r->interval_size, sizeof(long), 1, fin);
+    LOGC(0, 'c', 'k', "Loading %-50s: %ld\n", "interval_size",
+         r->interval_size);
     //////////////////////////////
-    LOGC(0, 'c', 'k', "Loading size\n");
     sfread((void *)&r->size, sizeof(long), 1, fin);
-    LOGC(0, 'c', 'k', "Loading cap\n");
+    LOGC(0, 'c', 'k', "Loading %-50s: %ld\n", "size", r->size);
     sfread(&r->cap, sizeof(long), 1, fin);
-    LOGC(0, 'c', 'k', "Loading customer_cnt\n");
+    LOGC(0, 'c', 'k', "Loading %-50s: %ld\n", "cap", r->cap);
     sfread(&r->customer_cnt, sizeof(long), 1, fin);
-    LOGC(0, 'c', 'k', "Loading id2table\n");
+    LOGC(0, 'c', 'k', "Loading %-50s: %ld\n", "customer_cnt", r->customer_cnt);
     r->id2table = RestAllocId2Table(r->cap);
     for (i = 0; i < r->size; i++) {
       fscanf(fin, "%s\n", str);
       _strcpy(r->id2table[i], str);
     }
-    LOGC(0, 'c', 'k', "Loading id2cnum\n");
+    LOGC(0, 'c', 'k', "Loading id2table\n");
     r->id2cnum = RestAllocId2Cnum(r->cap);
     sfread(r->id2cnum, sizeof(real), r->size, fin);
-    LOGC(0, 'c', 'k', "Loading id2embd\n");
+    LOGC(0, 'c', 'k', "Loading id2cnum\n");
     r->id2embd = RestAllocId2Embd(r->cap, r->default_embd, r->embd_dim);
     for (i = 0; i < r->size; i++)
       sfread(r->id2embd[i], sizeof(real), r->embd_dim, fin);
-    LOGC(0, 'c', 'k', "Loading id2next\n");
+    LOGC(0, 'c', 'k', "Loading id2embd\n");
     r->id2next = RestAllocId2Next(r->cap);
     sfread(r->id2next, sizeof(int), r->size, fin);
-    LOGC(0, 'c', 'k', "Loading hash2head\n");
+    LOGC(0, 'c', 'k', "Loading id2next\n");
     r->hash2head = RestAllocHash2Head(r->cap);
     sfread(r->hash2head, sizeof(int), r->cap, fin);
+    LOGC(0, 'c', 'k', "Loading hash2head\n");
     if (t == 0) {
       LOGC(0, 'c', 'k', "Loading w_embd\n");
       sfread(&v, sizeof(int), 1, fin);
