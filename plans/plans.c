@@ -43,12 +43,13 @@ void PlansThreadPrintProgBar(int dbg_lvl, int tid, real p) {
   saprintf(str, "GDSS:%.4e ", gd_ss);                       // gdss
   free(ht);
   double w_embd_total_norm = NumVecNorm(w_embd, V * N);
-  saprintfc(str, 'c', 'k', "W_EMBD: %.4e=%.2e/%.2e ",
+  saprintfc(str, 'g', 'k', "W_EMBD: %.4e=%.2e/%.2e ",
             w_embd_total_norm / (V + 1e-6), w_embd_total_norm,
             (double)V);  // w_embd
   double rest_total_norm = REST_NORM(CUR_REST);
   double rest_size = CUR_REST->size;
-  saprintfc(str, 'r', 'k', "REST[%d]: %.4e=%.2e/%.2e", _RID,
+  char cc = (_RID == 0 ? 'c' : 'r');
+  saprintfc(str, cc, 'k', "REST[%d]: %.4e=%.2e/%.2e", _RID,
             rest_total_norm / (rest_size + 1e-6), rest_total_norm,
             rest_size);  // w_embd
   LOGCLR(dbg_lvl);
