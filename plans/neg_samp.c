@@ -72,9 +72,10 @@ void NsFree(NegativeSampler *ns) {
   if (ns->use_wrh) {
     free(ns->wrh_a);
     free(ns->wrh_p);
-  } else
+  } else {
     free(ns->table);
-  free(ns->table);
+  }
+  free(ns->prob);
   free(ns->prob_log);
   free(ns);
   return;
