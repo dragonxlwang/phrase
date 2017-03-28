@@ -19,58 +19,108 @@
 #include "restuarant.c"
 #include "variables.c"
 
-int sid_plans_ppb_lock = 0;
+#define CUR_REST ((&(rests[_RID])))
+
+FILE *_log_file_handle;
+pthread_mutex_t print_lock;
+double _cur_pct = 0;
 void PlansThreadPrintProgBar(int dbg_lvl, int tid, real p) {
-  if (sid_plans_ppb_lock) return;
-  sid_plans_ppb_lock = 1;
-
-  char *str = malloc(0x1000);
-
-  int i, bar_len = 10;
+  if (pthread_mutex_trylock(&print_lock) != 0) return;
+  char str[0x1000], lstr[0x1000];
+  int i, bar_len = 10, _to_log = 0;
   clock_t cur_clock_t = clock();
   real pct = p * 100;
+  if (_cur_pct + 0.01 < pct) {
+    _to_log = 1;
+    _cur_pct = pct;
+  }
   int bar = p * bar_len;
   double st = (double)(cur_clock_t - start_clock_t) / CLOCKS_PER_SEC;
-  char *ht = strtime(st / thread_num);
+  char *ht = strtime(st / V_THREAD_NUM);
   sprintfc(str, 'y', 'k', "[%7.4lf%%]: ", pct);             // percentage
+  if (_to_log) sprintf(lstr, "%7.4lf ", pct);               //
   for (i = 0; i < bar; i++) saprintfc(str, 'r', 'k', "+");  // bar: past
   saprintfc(str, 'w', 'k', "~");                            // bar: current
   for (i = bar + 1; i < bar_len; i++)                       //
     saprintfc(str, 'c', 'k', "=");                          // bar: left
   saprintf(str, " ");                                       //
   saprintfc(str, 'g', 'k', "(tid=%02d)", tid);              // tid
+  if (_to_log) saprintf(lstr, "%02d ", tid);                //
   saprintf(str, " ");                                       //
   saprintf(str, "TIME:%.2e/%s ", st, ht);                   // time
+  if (_to_log) saprintf(lstr, "%.2e ", st);                 //
   saprintf(str, "GDSS:%.4e ", gd_ss);                       // gdss
+  if (_to_log) saprintf(lstr, "%.4e ", gd_ss);              //
   free(ht);
-#ifdef DEBUG
-  real scr = NumVecNorm(model->scr, model->v * model->n);
-  real ss = NumMatMaxRowNorm(model->scr, model->v, model->n);
-  real tar = NumVecNorm(model->tar, model->v * model->n);
-  real tt = NumMatMaxRowNorm(model->tar, model->v, model->n);
-  saprintf(str, "SCR:%.2e=%.2e*", scr, scr / ss);  // scr
-  saprintfc(str, 'r', 'k', "%.2e", ss);            // ss
-  saprintf(str, " ");                              //
-  saprintf(str, "TAR=%.2e=%.2e*", tar, tar / tt);  // tar
-  saprintfc(str, 'r', 'k', "%.2e", tt);            // tt
-  saprintf(str, " ");                              //
-#endif
-  return str;
+  double w_embd_total_norm = NumVecNorm(w_embd, V * N);
+  double w_embd_avg_norm = w_embd_total_norm / (V + 1e-6);
+  saprintfc(str, 'g', 'k', "W_EMBD: %.4e=%.2e/%.2e ", w_embd_avg_norm,
+            w_embd_total_norm,
+            (double)V);  // w_embd
+  if (_to_log)
+    saprintf(lstr, "%.4e %.2e %.2e ", w_embd_avg_norm, w_embd_total_norm,
+             (double)V);
+  double rest_total_norm = REST_NORM(CUR_REST);
+  double rest_size = CUR_REST->size;
+  double rest_avg_norm = rest_total_norm / (rest_size + 1e-6);
+  char cc = (_RID == 0 ? 'c' : 'r');
+  saprintfc(str, cc, 'k', "REST[%d]: %.4e=%.2e/%.2e ", _RID, rest_avg_norm,
+            rest_total_norm,
+            rest_size);  // w_embd
+  if (_to_log)
+    saprintf(lstr, "%.4e %.2e %.2e ", rest_avg_norm, rest_total_norm,
+             rest_size);
+  double cnum_max = CUR_REST->id2cnum[0];
+  double cnum_mean = NumVecMean(CUR_REST->id2cnum, 1000000);
+  saprintfc(str, 'y', 'k', "cnum:%.2e,%.4lf ", cnum_max, cnum_mean);
+  if (_to_log) saprintf(lstr, "%.2e %.4lf ", cnum_max, cnum_mean);
+  double missing_ratio = _rest_add_new / _rest_add_all;
+  saprintfc(str, 'b', 'k', "missing:%.2e ", missing_ratio);
+  if (_to_log) saprintf(lstr, "%.2e ", missing_ratio);
+  saprintfc(str, 'g', 'k', "reduce:%d ", _REDUCE_CNT);
+  if (_to_log) saprintf(lstr, "%d ", _REDUCE_CNT);
+  double single_word_ratio =
+      (double)_single_word_size / (double)_total_phrase_size;
+  saprintfc(str, 'g', 'k', "single:%.4e=%.2e/%.2e ", single_word_ratio,
+            (double)_single_word_size, (double)_total_phrase_size);
+  if (_to_log)
+    saprintf(lstr, "%.4e %.2e %.2e ", single_word_ratio,
+             (double)_single_word_size, (double)_total_phrase_size);
+  LOGCLR(dbg_lvl);
+  LOG(dbg_lvl, "%s", str);
+  if (_to_log) {
+    fprintf(_log_file_handle, "%s\n", lstr);
+    fflush(_log_file_handle);
+  }
+  /* LOG(dbg_lvl, "\n"); */
+  pthread_mutex_unlock(&print_lock);
 }
 
-real PlansEvalLL(real *scr_embd, int wid, int is_posi, real d) {
-  return NumLogSigmoid((is_posi ? 1 : -1) *
-                       NumVecDot(scr_embd, w_embd + wid * N, N)) /
-         d;
-}
-
-void PlansOptmLL(real *scr_embd, int wid, int is_posi, real d) {
+real PlansEvalLL(real *scr_embd, int wid, int is_positive, real d) {
   real *tar_embd = w_embd + wid * N;
-  real s = gd_ss / d * (is_posi == 1 ? 1 : 0) -
-           NumSigmoid(NumVecDot(scr_embd, tar_embd, N));
-  NumVecAddCVec(scr_embd, tar_embd, s, N);
-  NumVecAddCVec(tar_embd, scr_embd, s, N);
+  real x = NumVecDot(scr_embd, tar_embd, N);
+  x *= (is_positive ? 1.0 : -1.0);
+  return NumLogSigmoid(x) / d;
+}
+
+void PlansOptmLL(real *scr_embd, int wid, int is_positive, real d) {
+  real *tar_embd = w_embd + wid * N;
+  real x = NumVecDot(scr_embd, tar_embd, N);
+  x = (is_positive ? 1.0 : 0.0) - NumSigmoid(x);
+  x *= gd_ss / d;
+  NumVecAddCVec(scr_embd, tar_embd, x, N);
+  if (V_MODEL_PROJ_BALL_NORM > 0)
+    NumVecProjUnitBall(scr_embd, V_MODEL_PROJ_BALL_NORM, N);
+  NumVecAddCVec(tar_embd, scr_embd, x, N);
+  if (V_MODEL_PROJ_BALL_NORM > 0)
+    NumVecProjUnitBall(tar_embd, V_MODEL_PROJ_BALL_NORM, N);
   return;
+}
+
+real PlansGetDiscount(int beg, int end, int l, int neg_num) {
+  // beg - C ... [ beg, end] ... end + C
+  real d = beg - LARGER(beg - C, 0) + SMALLER(end + C, l - 1) - end;
+  return d;
 }
 
 void PlansSample(int *ids, int l, int *neg_lst, int neg_num, int pos,
@@ -81,30 +131,30 @@ void PlansSample(int *ids, int l, int *neg_lst, int neg_num, int pos,
   int beg_lst[PUP * PUP], end_lst[PUP * PUP], loc_lst[PUP * PUP],
       cnum_lst[PUP * PUP];
   real prob_lst[PUP * PUP], *scr_embd;
-  for (beg = LARGER(pos - P + 1, 0); beg <= pos; beg++)    // iter beg
-    for (end = pos + 1; end < SMALLER(beg + P, l); end++)  // iter end
-      if (beg > 0 || end < l) {                            // context exists
-        beg_lst[t] = beg;                                  //
-        end_lst[t] = end;                                  //
-        PhraseWid2Str(ids, beg, end, vcb, str);            // phrase str
-        loc_lst[t] = RestLocate(rest, str);                // find in rest
-        cnum_lst[t] = RestId2Cnum(rest, loc_lst[t]);       // customer number
-        if (loc_lst[t] == -1) u++;
-        t++;
-      }
+  for (beg = LARGER(pos - P, 0); beg <= pos; beg++)      // iter beg
+    for (end = pos; end < SMALLER(beg + P, l); end++) {  // iter end
+      if (beg == 0 && end == l - 1) continue;            //
+      beg_lst[t] = beg;                                  // select [beg, end]
+      end_lst[t] = end;                                  //
+      PHRASE_WID2STR(ids, beg, end, vcb, str);           // phrase str
+      loc_lst[t] = REST_LOCATE(CUR_REST, str);           // find in rest
+      cnum_lst[t] = REST_ID2CNUM(CUR_REST, loc_lst[t]);  // customer number
+      if (loc_lst[t] == -1) u++;                         // unseen words
+      t++;
+    }
   for (i = 0; i < t; i++) {
-    scr_embd = RestId2Embd(rest, loc_lst[i]);  // phrase embedding
-    beg = beg_lst[i];
-    end = end_lst[i];
-    f = log(loc_lst[i] == -1 ? alpha / u : cnum_lst[i]);         // prior
-    d = (beg - LARGER(beg - C, 0) + SMALLER(end + C, l) - end);  // pos discount
-    for (j = LARGER(beg - C, 0); j < beg; j++)                   // left
-      f += PlansEvalLL(scr_embd, ids[j], 1, d);                  //
-    for (j = end; j < SMALLER(end + C, l); j++)                  // right
-      f += PlansEvalLL(scr_embd, ids[j], 1, d);                  //
-    for (j = 0; j < neg_num; j++)                                // neg samples
-      f += PlansEvalLL(scr_embd, neg_lst[j], 0, 1);              //
-    prob_lst[i] = f / temp;                                      // annealing
+    scr_embd = REST_ID2EMBD(CUR_REST, loc_lst[i]);        // phrase embedding
+    beg = beg_lst[i];                                     //
+    end = end_lst[i];                                     //
+    f = log(loc_lst[i] == -1 ? alpha / u : cnum_lst[i]);  // prior
+    d = PlansGetDiscount(beg, end, l, neg_num);           // discount
+    for (j = LARGER(beg - C, 0); j <= beg - 1; j++)       // left
+      f += PlansEvalLL(scr_embd, ids[j], 1, d);           //
+    for (j = end + 1; j <= SMALLER(end + C, l - 1); j++)  // right
+      f += PlansEvalLL(scr_embd, ids[j], 1, d);           //
+    for (j = 0; j < neg_num; j++)                         // neg samples
+      f += PlansEvalLL(scr_embd, neg_lst[j], 0, 1);       //
+    prob_lst[i] = f * inv_temp;                           // annealing
   }
   NumSoftMax(prob_lst, 1, t);
   q = NumMultinomialSample(prob_lst, t, rs);
@@ -115,18 +165,18 @@ void PlansSample(int *ids, int l, int *neg_lst, int neg_num, int pos,
 
 void PlansUpdate(int *ids, int l, int *neg_lst, int neg_num, int beg, int end) {
   int i, j;
-  char str[0x1000];
+  char str[MAX_PHRASE_LEN];
   real *scr_embd, d;
-  PhraseWid2Str(ids, beg, end, vcb, str);  // phrase str
-  i = RestLocateAndAdd(rest, str);
-  scr_embd = RestId2Embd(rest, i);
-  d = (beg - LARGER(beg - C, 0) + SMALLER(end + C, l) - end);  // pos discount
-  for (j = LARGER(beg - C, 0); j < beg; j++)                   // left
-    PlansOptmLL(scr_embd, ids[j], 1, d);                       //
-  for (j = end; j < SMALLER(end + C, l); j++)                  // right
-    PlansOptmLL(scr_embd, ids[j], 1, d);                       //
-  for (j = 0; j < neg_num; j++)                                // neg samples
-    PlansOptmLL(scr_embd, neg_lst[j], 0, 1);                   //
+  PHRASE_WID2STR(ids, beg, end, vcb, str);  // phrase str
+  i = REST_LOCATE_AND_ADD(CUR_REST, str);
+  scr_embd = REST_ID2EMBD(CUR_REST, i);
+  d = PlansGetDiscount(beg, end, l, neg_num);
+  for (j = LARGER(beg - C, 0); j <= beg - 1; j++)       // left
+    PlansOptmLL(scr_embd, ids[j], 1, d);                //
+  for (j = end + 1; j <= SMALLER(end + C, l - 1); j++)  // right
+    PlansOptmLL(scr_embd, ids[j], 1, d);                //
+  for (j = 0; j < neg_num; j++)                         // neg samples
+    PlansOptmLL(scr_embd, neg_lst[j], 0, 1);            //
   return;
 }
 
@@ -168,13 +218,14 @@ void *PlansThreadTrain(void *arg) {
       progress[tid] = iter_num + (double)(fpos - fbeg) / (fend - fbeg);  // prog
       p = GetTrainProgress(progress, V_THREAD_NUM, V_ITER_NUM);          //
       gd_ss = V_INIT_GRAD_DESCENT_STEP_SIZE * (1 - p);                   // gdss
+      inv_temp = exp(p * log(V_FINAL_INV_TEMP));                         // temp
       PlansThreadPrintProgBar(2, tid, p);                                // info
     }
     if (feof(fin) || fpos >= fend) {
       fseek(fin, fbeg, SEEK_SET);
       if (V_CACHE_INTERMEDIATE_MODEL &&
           iter_num % V_CACHE_INTERMEDIATE_MODEL == 0)
-        ModelSave(model, iter_num, V_MODEL_SAVE_PATH);
+        RestSave(rests, w_embd, V, N, iter_num, V_MODEL_SAVE_PATH);
       iter_num++;
     }
   }
@@ -182,6 +233,41 @@ void *PlansThreadTrain(void *arg) {
   fclose(fin);
   pthread_exit(NULL);
   return 0;
+}
+
+void PlansPrep() {
+  if (pthread_mutex_init(&print_lock, NULL) != 0) {
+    LOG(0, "[PLANS] Mutex init failed\n");
+    return;
+  }
+  // add vocabulary to restaurant as priors
+  LOG(0, "[PLANS] Adding vocabulary to restaurants\n");
+  int i = 0, j, t;
+  real prior = 2 * V;
+  Restaurant *rr;
+  char *ss;
+  for (t = 0; t < 2; t++) {
+    rr = &(rests[t]);
+    for (i = 0; i < vcb->size; i++) {
+      ss = VocabGetWord(vcb, i);
+      strncpy(rr->id2table[i], ss, MAX_PHRASE_LEN);
+      rr->id2cnum[i] = ns->prob[i] * prior;
+      NumCopyVec(rr->id2embd[i], rr->default_embd, rr->embd_dim);
+      REST_BKDR_LINK_NO_LOCK(ss, i, rr);
+    }
+    rr->size = vcb->size;
+    rr->customer_cnt = 0;
+  }
+  char *log_file_path = sformat("%s.log", V_MODEL_SAVE_PATH);
+  LOG(0, "log file path: %s\n", log_file_path);
+  _log_file_handle = fopen(log_file_path, "wb");
+  free(log_file_path);
+  LOG(0, "[PLANS] Finished\n");
+}
+
+void PlansClean() {
+  fclose(_log_file_handle);
+  return;
 }
 
 #endif /* ifndef PLANS */

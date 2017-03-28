@@ -77,6 +77,8 @@ int log_debug_mode = 2;
       fflush(stdout);                      \
     }                                      \
   })
+#define LOGDBG(...) LOGC(1, 'r', 'k', __VA_ARGS__)
+
 #define LOWER(c) (((c) >= 'A' && (c) <= 'Z') ? (c) - 'A' + 'a' : (c))
 #define UPPER(c) (((c) >= 'a' && (c) <= 'z') ? (c) - 'a' + 'A' : (c))
 
@@ -328,6 +330,15 @@ int getoptpos(char *str, int argc, char **argv) {
   for (i = 1; i < argc; i++)
     if (!strcmp(str, argv[i])) return i;
   return -1;
+}
+
+void sfread(void *ptr, size_t s, size_t n, FILE *fin) {
+  size_t rn;
+  if ((rn = fread(ptr, s, n, fin)) != n) {
+    LOG(0, "sfread Error! expecting %ld, reading %ld\n", n, rn);
+    exit(1);
+  }
+  return;
 }
 
 /***

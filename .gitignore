@@ -7,6 +7,7 @@
 *.tar.gz
 *.gz
 *.result
+plans/test.c
 tags
 
 ## exclude special cases

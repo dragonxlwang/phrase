@@ -47,6 +47,7 @@ NegativeSampler *NsInit(real *freq, int num, real ns_pow, int use_wrh,
     ns->table = NumMultinomialTableInit(ns->prob, num, ns->table_r);
   }
   for (i = 0; i < num; i++) ns->prob_log[i] = log(neg_num * ns->prob[i]);
+  LOG(2, "[NS]: Init Finished\n");
   return ns;
 }
 
@@ -71,9 +72,10 @@ void NsFree(NegativeSampler *ns) {
   if (ns->use_wrh) {
     free(ns->wrh_a);
     free(ns->wrh_p);
-  } else
+  } else {
     free(ns->table);
-  free(ns->table);
+  }
+  free(ns->prob);
   free(ns->prob_log);
   free(ns);
   return;

@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import os
 import gigaword
 import re
@@ -5,7 +6,7 @@ from nltk.tokenize import sent_tokenize, word_tokenize
 from multiprocessing import Pool
 import math
 
-giga_path = os.path.join(os.path.expanduser('~'), 'data/gigaword')
+giga_path = os.path.join(os.path.expanduser('~'), 'local/data/gigaword')
 nyt_path = os.path.join(giga_path, 'gigaword_eng_5_d2/data/nyt_eng/')
 wpb_path = os.path.join(giga_path, 'gigaword_eng_5_d2/data/wpb_eng/')
 apw_path = os.path.join(giga_path, 'gigaword_eng_5_d1/data/apw_eng/')
@@ -68,7 +69,7 @@ def single_process_work(args):
 
 
 def main():
-    pn = 20
+    pn = 50
     flst = os.listdir(dirpath)
     arglst = []
     for i in range(pn):
