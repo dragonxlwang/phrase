@@ -24,6 +24,6 @@ def get_title(infilename, outfilename):
 if __name__=='__main__':
 	print datetime.now().time() 
 	infilename = '/home/xwang95/data/wikipedia/enwiki-latest-pages-articles.xml.bz2'
-	outfilename = '/home/sjiang18/Data/plans/wiki.title'
+	outfilename = '/home/sjiang18/data/plans/wiki.title'
 	get_title(infilename, outfilename)
 	print datetime.now().time()

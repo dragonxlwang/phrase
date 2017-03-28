@@ -2,7 +2,7 @@ class TreeNode:
 	def __init__(self):
 		self.children = []
 		self.childrenDic = {}
-		self.term = ''
+		self.length = 0
 	def addChild(self, word):
 		if word in self.childrenDic:
 			return self.children[self.childrenDic[word]]
@@ -23,23 +23,33 @@ class PrefixTree:
 		node = self.root
 		for word in words:
 			node = node.addChild(word)
-		node.term = term
+		node.length = len(words)
 	def startsWith_isTerm(self, words):
 		node = self.root
 		for i in range(len(words)):
 			node = node.getChild(words[i])
 			if node == None:
 				return False, False
-		return True, (' '.join(words) == node.term)
+		return True, len(words) == node.length
+		
 	def getTerm(self, sentence):
 		words = [s for s in sentence.split(' ') if s != '']
 		terms = []
-		for i in range(len(words) - 1):
+		'''for i in range(len(words) - 1):
 			for j in range(i+1, len(words)):
 				startsWith, isTerm = self.startsWith_isTerm(words[i: j + 1]) 
 				if not startsWith:
 					break
 				if isTerm:
+					terms.append(' '.join(words[i:j+1]))
+		'''
+		for i in range(len(words) - 1):
+			node = self.root
+			for j in range(i, len(words)):
+				node = node.getChild(words[j])
+				if node == None:
+					break
+				if j - i + 1 == node.length:
 					terms.append(' '.join(words[i:j+1]))
 		return terms
 
