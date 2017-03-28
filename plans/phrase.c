@@ -26,3 +26,5 @@
     }                                                          \
   })
 #endif /* ifndef PHRASE */
+
+#define PHRASE_SINGLE_WORD(S) (strstr(S, "=||=") == NULL)

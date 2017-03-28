@@ -333,8 +333,9 @@ int getoptpos(char *str, int argc, char **argv) {
 }
 
 void sfread(void *ptr, size_t s, size_t n, FILE *fin) {
-  if (fread(ptr, s, n, fin) != n) {
-    LOG(0, "Error!\n");
+  size_t rn;
+  if ((rn = fread(ptr, s, n, fin)) != n) {
+    LOG(0, "sfread Error! expecting %ld, reading %ld\n", n, rn);
     exit(1);
   }
   return;

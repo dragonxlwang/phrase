@@ -37,7 +37,7 @@ real V_INIT_GRAD_DESCENT_STEP_SIZE = 1e-4;
 // final inverse temperature, log-linear monotonically increasing from 1
 real V_FINAL_INV_TEMP = 5;
 // shrink rate for customer number
-real V_REST_SHRINK_RATE = 0.99;
+real V_REST_SHRINK_RATE = 1 - 1e-2;  // 1 - 1e-6;
 // interval size between shrink in restaurant
 real V_REST_INTERVAL_SIZE = 5 * _V;
 // max number of tables in restaurant

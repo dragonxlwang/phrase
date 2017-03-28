@@ -24,6 +24,7 @@ void Train(int argc, char* argv[]) {
   ThreadTrain trainer = NULL;
   trainer = PlansThreadTrain;
   prepper = PlansPrep;
+  cleaner = PlansClean;
   if (prepper) prepper();
   if (trainer) {
     long int tid;

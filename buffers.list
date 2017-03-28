@@ -1,32 +1,32 @@
 
 /home/xlwang/workspace/phrase
-  1 #a   "plans/plans.c"                line 190
-  2  a   "plans/constants.c"            line 0
-  3  a   "plans/variables.c"            line 15
-  4 %a   "plans/restuarant.c"           line 44
-  5  a   "plans/phrase.c"               line 19
-  6      "plans/neg_samp.c"             line 0
-  7  h   "utils/util_text.c"            line 137
-  8  h   "utils/util_misc.c"            line 325
+  1 %a   "plans/plans.c"                line 221
+  2      "plans/constants.c"            line 0
+  3  a   "plans/variables.c"            line 0
+  4  a   "plans/restuarant.c"           line 0
+  5      "plans/phrase.c"               line 0
+  6  a   "plans/neg_samp.c"             line 0
+  7      "utils/util_text.c"            line 0
+  8      "utils/util_misc.c"            line 0
   9      "vectors/w2v.c"                line 0
  10      "vectors/constants.c"          line 0
  11      "vectors/variables.c"          line 0
  12      "test/test_text.c"             line 0
  13      "test/test.c"                  line 0
  14      "vectors.sh"                   line 0
- 15  h   "utils/util_num.c"             line 200
+ 15      "utils/util_num.c"             line 0
  16      "classify/dcme.c"              line 0
  17      "classify/nsme.c"              line 0
  18      "vectors/model.c"              line 0
- 19  a   "plans/train.c"                line 5
+ 19  a   "plans/train.c"                line 0
  20      "vectors/train.c"              line 0
  21      "vectors/dcme.c"               line 0
  22      "classify/constants.c"         line 0
  23      "classify/variables.c"         line 0
  24      "makefile"                     line 0
- 25  a   "plans/test.c"                 line 5
+ 25      "plans/test.c"                 line 0
  26      "/usr/include/stdio.h"         line 0
  27      "/data/users/xlwang/fbsource/fbcode/caffe2/caffe2/python/core.py" line 0
  28      "/usr/include/string.h"        line 0
  29      "classify/helper.c"            line 0
- 30  h   "[Location List]"              line 1
+ 30      "[Location List]"              line 0

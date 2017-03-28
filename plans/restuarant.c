@@ -12,6 +12,7 @@
 #include "../utils/util_num.c"
 #include "../utils/util_text.c"
 #include "constants.c"
+#include "phrase.c"
 
 #define CHECK_ALLOCATE_STATUS(x) \
   if (!x) LOG(0, "Error: Allocation failed for " #x "\n");
@@ -21,6 +22,8 @@
 pthread_mutex_t rest_lock;
 pthread_mutex_t *hash_locks;
 int _RID = 0;
+long _single_word_size = 0;
+long _total_phrase_size = 0;
 
 typedef struct Restaurant {
   char **id2table;  // do not need to rewrite
@@ -100,37 +103,35 @@ pthread_mutex_t *RestAllocLocks(long cap) {
 
 //// Resize (always called only in single thread)
 
-void RestReallocId2Table(char **new_id2table, char **id2table, long old_size,
+void RestReallocId2Table(char **new_id2table, char **id2table, long size,
                          pair *p) {
   int i;
   if (p) {
-    for (i = 0; i < old_size; i++) _strcpy(new_id2table[i], id2table[p[i].key]);
+    for (i = 0; i < size; i++) _strcpy(new_id2table[i], id2table[p[i].key]);
   } else {
-    for (i = 0; i < old_size; i++) _strcpy(new_id2table[i], id2table[i]);
+    for (i = 0; i < size; i++) _strcpy(new_id2table[i], id2table[i]);
   }
   return;
 }
 
-void RestReallocId2Cnum(real *new_id2cnum, real *id2cnum, long old_size,
-                        pair *p) {
+void RestReallocId2Cnum(real *new_id2cnum, real *id2cnum, long size, pair *p) {
   int i;
   if (p) {
-    for (i = 0; i < old_size; i++) new_id2cnum[i] = id2cnum[p[i].key];
+    for (i = 0; i < size; i++) new_id2cnum[i] = id2cnum[p[i].key];
   } else {
-    for (i = 0; i < old_size; i++) new_id2cnum[i] = id2cnum[i];
+    for (i = 0; i < size; i++) new_id2cnum[i] = id2cnum[i];
   }
   return;
 }
 
-void RestReallocId2Embd(real **new_id2embd, real **id2embd, long old_size,
+void RestReallocId2Embd(real **new_id2embd, real **id2embd, long size,
                         int embd_dim, pair *p) {
   int i;
   if (p) {
-    for (i = 0; i < old_size; i++)
+    for (i = 0; i < size; i++)
       NumCopyVec(new_id2embd[i], id2embd[p[i].key], embd_dim);
   } else {
-    for (i = 0; i < old_size; i++)
-      NumCopyVec(new_id2embd[i], id2embd[i], embd_dim);
+    for (i = 0; i < size; i++) NumCopyVec(new_id2embd[i], id2embd[i], embd_dim);
   }
   return;
 }
@@ -154,17 +155,19 @@ void RestReallocId2Embd(real **new_id2embd, real **id2embd, long old_size,
   ({                                    \
     int _h = REST_BKDR_HASH(S, R->cap); \
     R->id2next[I] = R->hash2head[_h];   \
-    R->hash2head[_h] = R->id2next[I];   \
+    R->hash2head[_h] = I;               \
   })
 // hash lock: used when multiple threads are locate and add. per slot has a
 // lock; if memory is limited, multiple slots can share one lock
-#define REST_BKDR_LINK(S, I, R)              \
-  ({                                         \
-    int _h = REST_BKDR_HASH(S, R->cap);      \
-    pthread_mutex_lock(&(hash_locks[_h]));   \
-    R->id2next[I] = R->hash2head[_h];        \
-    R->hash2head[_h] = R->id2next[I];        \
-    pthread_mutex_unlock(&(hash_locks[_h])); \
+#define REST_BKDR_LINK(S, I, R)                     \
+  ({                                                \
+    int _h = REST_BKDR_HASH(S, R->cap);             \
+    pthread_mutex_lock(&(hash_locks[_h]));          \
+    if (PHRASE_SINGLE_WORD(S)) _single_word_size++; \
+    _total_phrase_size++;                           \
+    R->id2next[I] = R->hash2head[_h];               \
+    R->hash2head[_h] = I;                           \
+    pthread_mutex_unlock(&(hash_locks[_h]));        \
   })
 
 // TODO(xlwang): might want to append instead of prepend
@@ -178,16 +181,19 @@ void RestReallocId2Embd(real **new_id2embd, real **id2embd, long old_size,
     int _i = R->hash2head[_h];                          \
     int _step = 0;                                      \
     while (_i != -1 && _i < R->size && _step++ < 100 && \
-           !strcmp(R->id2table[_i], S)) {               \
+           strcmp(R->id2table[_i], S)) {                \
       _i = R->id2next[_i];                              \
     }                                                   \
     (_i < R->size && _step < 100) ? _i : -1;            \
   })
 
+real _rest_add_new = 0;
+real _rest_add_all = 0;
 #define REST_LOCATE_AND_ADD(R, S)                                              \
   ({                                                                           \
-    if ((R->customer_cnt = R->customer_cnt + 1) > R->interval_size)            \
+    if ((R->customer_cnt = R->customer_cnt + 1) > R->interval_size) {          \
       RestReduce();                                                            \
+    }                                                                          \
     if (R->size >= R->cap) {                                                   \
       LOG(0, "restaurant size exceeds: size=%ld, cap=%ld\n", R->size, R->cap); \
       exit(1);                                                                 \
@@ -200,9 +206,11 @@ void RestReallocId2Embd(real **new_id2embd, real **id2embd, long old_size,
       R->id2cnum[_i] = 1;                                                      \
       NumCopyVec(R->id2embd[_i], R->default_embd, R->embd_dim);                \
       REST_BKDR_LINK(S, _i, R);                                                \
+      _rest_add_new++;                                                         \
     } else if (_i < R->size) {                                                 \
-      R->id2cnum[_i] += 1;                                                     \
+      R->id2cnum[_i] = R->id2cnum[_i] + 1;                                     \
     }                                                                          \
+    _rest_add_all++;                                                           \
     _i;                                                                        \
   })
 
@@ -222,16 +230,16 @@ void RestReallocId2Embd(real **new_id2embd, real **id2embd, long old_size,
     CHECK_ALLOCATE_STATUS(R->default_embd); \
   })
 
-//// check norm
+//// check
 
-#define REST_NORM(R)                                        \
-  ({                                                        \
-    int _i;                                                 \
-    real _SUM_NORM = 0;                                     \
-    for (_i = 0; _i < R->size; _i++) {                      \
-      _SUM_NORM += NumVecNorm(R->id2embd[_i], R->embd_dim); \
-    }                                                       \
-    _SUM_NORM;                                              \
+#define REST_NORM(R)                                                       \
+  ({                                                                       \
+    int _i;                                                                \
+    real _SUM_NORM = 0;                                                    \
+    for (_i = 0; _i < R->size; _i++) {                                     \
+      _SUM_NORM += NumVecDot(R->id2embd[_i], R->id2embd[_i], R->embd_dim); \
+    }                                                                      \
+    sqrt(_SUM_NORM);                                                       \
   })
 
 //// sort (always called in only one thread)
@@ -247,7 +255,7 @@ pair *RestSort(Restaurant *r, int size) {
   }
   for (i = 0; i < size; i++) {
     REST_SORTED_PAIRS[i].key = i;
-    REST_SORTED_PAIRS[i].val = r->id2cnum[i];
+    REST_SORTED_PAIRS[i].val = r->shrink_rate * r->id2cnum[i];
   }
   sort_tuples(REST_SORTED_PAIRS, size, 1);
   return REST_SORTED_PAIRS;
@@ -328,7 +336,16 @@ void RestReduce() {
     }
     _RID = 1 - _RID;
     _REDUCE_CNT++;
+
+    int _j;
+    _single_word_size = 1;
+    _total_phrase_size = 1;
+    for (_j = 0; _j < nr->size; _j++) {
+      if (PHRASE_SINGLE_WORD(nr->id2table[_j])) _single_word_size++;
+      _total_phrase_size++;
+    }
   }
+
   /* LOGC(0, 'y', 'k', "Unlocking\n"); */
   pthread_mutex_unlock(&rest_lock);
   return;
@@ -401,7 +418,7 @@ Restaurant *RestLoad(char *fp, real **w_embd_ptr, int *nptr, int *vptr) {
     FILE *fin = fopen(fp, "rb");
     LOG(0, "Loading from %s\n", fp);
     if (!fin) {
-      LOG(0, "Error!\n");
+      LOG(0, "Loading Error!\n");
       exit(1);
     }
     r = &(_rests[t]);
@@ -410,7 +427,7 @@ Restaurant *RestLoad(char *fp, real **w_embd_ptr, int *nptr, int *vptr) {
     r->default_embd = NumNewVec(r->embd_dim);
     sfread(r->default_embd, sizeof(real), r->embd_dim, fin);
     sfread(&r->shrink_rate, sizeof(real), 1, fin);
-    LOGC(0, 'c', 'k', "Loading %-50s: %lf\n ", "shrink_rate", r->shrink_rate);
+    LOGC(0, 'c', 'k', "Loading %-50s: %lf\n", "shrink_rate", r->shrink_rate);
     sfread(&r->l2w, sizeof(real), 1, fin);
     LOGC(0, 'c', 'k', "Loading %-50s: %lf\n", "l2w", r->l2w);
     sfread(&r->max_table_num, sizeof(long), 1, fin);
@@ -449,6 +466,7 @@ Restaurant *RestLoad(char *fp, real **w_embd_ptr, int *nptr, int *vptr) {
       LOGC(0, 'c', 'k', "Loading w_embd\n");
       sfread(&v, sizeof(int), 1, fin);
       sfread(&n, sizeof(int), 1, fin);
+      printf("v=%d n=%d\n", v, n);
       *w_embd_ptr = NumNewHugeVec(v * n);
       sfread(*w_embd_ptr, sizeof(real), v * n, fin);
       *vptr = v;

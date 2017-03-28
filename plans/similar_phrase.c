@@ -37,16 +37,22 @@ void Load(int argc, char *argv[]) {
 }
 
 void SortAndPrint(int k) {
+  LOG(0, "sorting\n");
+  if (k == -1) k = rests[0].size;
   pair *pairs = RestSort(rests, k);
+  LOG(0, "finished\n");
   int i, j;
+  int l = 0;
   for (i = 0; i < k; i++) {
     j = pairs[i].key;
+    if (PHRASE_SINGLE_WORD(rests->id2table[j])) continue;
     printf("[%d]: %-100s %lf\n", i, rests->id2table[j], rests->id2cnum[j]);
+    if (l++ % 60 == 0) getchar();
   }
 }
 
 int main(int argc, char *argv[]) {
   Load(argc, argv);
-  SortAndPrint(100);
+  SortAndPrint(-1);
   return 0;
 }
