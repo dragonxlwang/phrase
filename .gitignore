@@ -9,6 +9,7 @@
 *.result
 plans/test.c
 tags
+eval.sh
 
 ## exclude special cases
 [Tt]est/
