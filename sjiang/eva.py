@@ -1,6 +1,6 @@
 class Eva:
 
-	def __init__():
+	def __init__(self):
 		self.freqfilename = './data/wiki.nyt.freq'
 	def get_freq(self):
 		term_wikifreq = {}
