@@ -58,7 +58,7 @@ char **RestAllocId2Table(long cap) {
 }
 
 real *RestAllocId2Cnum(long cap) {
-  real *id2cnum = NumNewVec(cap);
+  real *id2cnum = NumNewHugeVec(cap);
   NumFillZeroVec(id2cnum, cap);
   return id2cnum;
 }
@@ -73,7 +73,7 @@ real **RestAllocId2Embd(long cap, real *default_embd, int embd_dim) {
 }
 
 int *RestAllocId2Next(long cap) {
-  int *id2next = NumNewIntVec(cap);
+  int *id2next = NumNewHugeIntVec(cap);
   NumFillZeroIntVec(id2next, cap);
   return id2next;
 }
@@ -83,7 +83,7 @@ void RestInitHash2Head(int *hash2head, long cap) {
 }
 
 int *RestAllocHash2Head(long cap) {
-  int *hash2head = NumNewIntVec(cap);
+  int *hash2head = NumNewHugeIntVec(cap);
   RestInitHash2Head(hash2head, cap);
   return hash2head;
 }
@@ -114,24 +114,36 @@ void RestReallocId2Table(char **new_id2table, char **id2table, long size,
   return;
 }
 
-void RestReallocId2Cnum(real *new_id2cnum, real *id2cnum, long size, pair *p) {
+void RestReallocId2Cnum(real *new_id2cnum, real *id2cnum, long size, real sr,
+                        pair *p) {
   int i;
   if (p) {
-    for (i = 0; i < size; i++) new_id2cnum[i] = id2cnum[p[i].key];
+    for (i = 0; i < size; i++) new_id2cnum[i] = id2cnum[p[i].key] * sr;
   } else {
-    for (i = 0; i < size; i++) new_id2cnum[i] = id2cnum[i];
+    for (i = 0; i < size; i++) new_id2cnum[i] = id2cnum[i] * sr;
   }
   return;
 }
 
-void RestReallocId2Embd(real **new_id2embd, real **id2embd, long size,
+void RestReallocId2Embd(real **new_id2embd, real **id2embd, long size, real l2w,
                         int embd_dim, pair *p) {
   int i;
   if (p) {
-    for (i = 0; i < size; i++)
-      NumCopyVec(new_id2embd[i], id2embd[p[i].key], embd_dim);
+    if (l2w > 0) {
+      for (i = 0; i < size; i++)
+        NumMulCVec(id2embd[i], 1 - l2w, embd_dim, new_id2embd[i]);
+    } else {
+      for (i = 0; i < size; i++)
+        NumCopyVec(new_id2embd[i], id2embd[p[i].key], embd_dim);
+    }
   } else {
-    for (i = 0; i < size; i++) NumCopyVec(new_id2embd[i], id2embd[i], embd_dim);
+    if (l2w > 0) {
+      for (i = 0; i < size; i++)
+        NumMulCVec(id2embd[i], 1 - l2w, embd_dim, new_id2embd[i]);
+    } else {
+      for (i = 0; i < size; i++)
+        NumCopyVec(new_id2embd[i], id2embd[i], embd_dim);
+    }
   }
   return;
 }
@@ -255,7 +267,7 @@ pair *RestSort(Restaurant *r, int size) {
   }
   for (i = 0; i < size; i++) {
     REST_SORTED_PAIRS[i].key = i;
-    REST_SORTED_PAIRS[i].val = r->shrink_rate * r->id2cnum[i];
+    REST_SORTED_PAIRS[i].val = r->id2cnum[i];
   }
   sort_tuples(REST_SORTED_PAIRS, size, 1);
   return REST_SORTED_PAIRS;
@@ -325,8 +337,9 @@ void RestReduce() {
     nr->size = r->max_table_num / 2;
     nr->customer_cnt = 0;
     RestReallocId2Table(nr->id2table, r->id2table, nr->size, sorted_pairs);
-    RestReallocId2Cnum(nr->id2cnum, r->id2cnum, nr->size, sorted_pairs);
-    RestReallocId2Embd(nr->id2embd, r->id2embd, nr->size, nr->embd_dim,
+    RestReallocId2Cnum(nr->id2cnum, r->id2cnum, nr->size, nr->shrink_rate,
+                       sorted_pairs);
+    RestReallocId2Embd(nr->id2embd, r->id2embd, nr->size, nr->l2w, nr->embd_dim,
                        sorted_pairs);
     RestInitHash2Head(nr->hash2head, nr->cap);
     // TODO(xlwang): assuming that at reducing time, the back-up restaurant is
@@ -443,6 +456,7 @@ Restaurant *RestLoad(char *fp, real **w_embd_ptr, int *nptr, int *vptr) {
     LOGC(0, 'c', 'k', "Loading %-50s: %ld\n", "cap", r->cap);
     sfread(&r->customer_cnt, sizeof(long), 1, fin);
     LOGC(0, 'c', 'k', "Loading %-50s: %ld\n", "customer_cnt", r->customer_cnt);
+    //////////////////////////////
     r->id2table = RestAllocId2Table(r->cap);
     for (i = 0; i < r->size; i++) {
       fscanf(fin, "%s\n", str);
