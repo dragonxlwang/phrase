@@ -5,31 +5,43 @@ make plans/train NOEXEC=1;
 thread=46
 iter=20
 temp=5
+sr=0.99
 
-gd=5e-3
+gd=8e-3
 ./bin/plans/train \
-  V_MODEL_DECOR_FILE_PATH iter${iter}_gd${gd}_temp${temp} \
-  V_ITER_NUM ${iter} \
+  V_MODEL_DECOR_FILE_PATH iter${iter}_gd${gd}_temp${temp}_sr${sr} \
   V_THREAD_NUM ${thread} \
+  V_ITER_NUM ${iter} \
   V_INIT_GRAD_DESCENT_STEP_SIZE ${gd} \
-  V_FINAL_INV_TEMP ${temp}
+  V_FINAL_INV_TEMP ${temp} \
+  V_REST_SHRINK_RATE ${sr}
+
+gd=6e-3
+./bin/plans/train \
+  V_MODEL_DECOR_FILE_PATH iter${iter}_gd${gd}_temp${temp}_sr${sr} \
+  V_THREAD_NUM ${thread} \
+  V_ITER_NUM ${iter} \
+  V_INIT_GRAD_DESCENT_STEP_SIZE ${gd} \
+  V_FINAL_INV_TEMP ${temp} \
+  V_REST_SHRINK_RATE ${sr}
+
+gd=4e-3
+./bin/plans/train \
+  V_MODEL_DECOR_FILE_PATH iter${iter}_gd${gd}_temp${temp}_sr${sr} \
+  V_THREAD_NUM ${thread} \
+  V_ITER_NUM ${iter} \
+  V_INIT_GRAD_DESCENT_STEP_SIZE ${gd} \
+  V_FINAL_INV_TEMP ${temp} \
+  V_REST_SHRINK_RATE ${sr}
 
 gd=2e-3
 ./bin/plans/train \
-  V_MODEL_DECOR_FILE_PATH iter${iter}_gd${gd}_temp${temp} \
-  V_ITER_NUM ${iter} \
+  V_MODEL_DECOR_FILE_PATH iter${iter}_gd${gd}_temp${temp}_sr${sr} \
   V_THREAD_NUM ${thread} \
-  V_INIT_GRAD_DESCENT_STEP_SIZE ${gd} \
-  V_FINAL_INV_TEMP ${temp}
-
-gd=1e-3
-./bin/plans/train \
-  V_MODEL_DECOR_FILE_PATH iter${iter}_gd${gd}_temp${temp} \
   V_ITER_NUM ${iter} \
-  V_THREAD_NUM ${thread} \
   V_INIT_GRAD_DESCENT_STEP_SIZE ${gd} \
-  V_FINAL_INV_TEMP ${temp}
-
+  V_FINAL_INV_TEMP ${temp} \
+  V_REST_SHRINK_RATE ${sr}
 
 # devbig421
 # make plans/train NOEXEC=1;
@@ -40,29 +52,29 @@ gd=1e-3
 # gd=5e-3
 # sr=0.999
 # ./bin/plans/train \
-#   V_MODEL_DECOR_FILE_PATH iter${iter}_gd${gd}_sr${sr} \
-#   V_ITER_NUM ${iter} \
-#   V_THREAD_NUM ${thread} \
-#   V_INIT_GRAD_DESCENT_STEP_SIZE ${gd} \
-#   V_REST_SHRINK_RATE ${sr}
+  #   V_MODEL_DECOR_FILE_PATH iter${iter}_gd${gd}_sr${sr} \
+  #   V_ITER_NUM ${iter} \
+  #   V_THREAD_NUM ${thread} \
+  #   V_INIT_GRAD_DESCENT_STEP_SIZE ${gd} \
+  #   V_REST_SHRINK_RATE ${sr}
 
 # gd=2e-3
 # sr=0.999
 # ./bin/plans/train \
-#   V_MODEL_DECOR_FILE_PATH iter${iter}_gd${gd}_sr${sr} \
-#   V_ITER_NUM ${iter} \
-#   V_THREAD_NUM ${thread} \
-#   V_INIT_GRAD_DESCENT_STEP_SIZE ${gd} \
-#   V_REST_SHRINK_RATE ${sr}
+  #   V_MODEL_DECOR_FILE_PATH iter${iter}_gd${gd}_sr${sr} \
+  #   V_ITER_NUM ${iter} \
+  #   V_THREAD_NUM ${thread} \
+  #   V_INIT_GRAD_DESCENT_STEP_SIZE ${gd} \
+  #   V_REST_SHRINK_RATE ${sr}
 
 # gd=1e-3
 # sr=0.999
 # ./bin/plans/train \
-#   V_MODEL_DECOR_FILE_PATH iter${iter}_gd${gd}_sr${sr} \
-#   V_ITER_NUM ${iter} \
-#   V_THREAD_NUM ${thread} \
-#   V_INIT_GRAD_DESCENT_STEP_SIZE ${gd} \
-#   V_REST_SHRINK_RATE ${sr}
+  #   V_MODEL_DECOR_FILE_PATH iter${iter}_gd${gd}_sr${sr} \
+  #   V_ITER_NUM ${iter} \
+  #   V_THREAD_NUM ${thread} \
+  #   V_INIT_GRAD_DESCENT_STEP_SIZE ${gd} \
+  #   V_REST_SHRINK_RATE ${sr}
 
 
 #!/usr/bin/env zsh
@@ -75,26 +87,26 @@ gd=1e-3
 # gd=5e-3
 # temp=10
 # ./bin/plans/train \
-#   V_MODEL_DECOR_FILE_PATH iter${iter}_gd${gd}_temp${temp} \
-#   V_ITER_NUM ${iter} \
-#   V_THREAD_NUM ${thread} \
-#   V_INIT_GRAD_DESCENT_STEP_SIZE ${gd} \
-#   V_FINAL_INV_TEMP ${temp}
+  #   V_MODEL_DECOR_FILE_PATH iter${iter}_gd${gd}_temp${temp} \
+  #   V_ITER_NUM ${iter} \
+  #   V_THREAD_NUM ${thread} \
+  #   V_INIT_GRAD_DESCENT_STEP_SIZE ${gd} \
+  #   V_FINAL_INV_TEMP ${temp}
 
 # gd=2e-3
 # temp=10
 # ./bin/plans/train \
-#   V_MODEL_DECOR_FILE_PATH iter${iter}_gd${gd}_temp${temp} \
-#   V_ITER_NUM ${iter} \
-#   V_THREAD_NUM ${thread} \
-#   V_INIT_GRAD_DESCENT_STEP_SIZE ${gd} \
-#   V_FINAL_INV_TEMP ${temp}
+  #   V_MODEL_DECOR_FILE_PATH iter${iter}_gd${gd}_temp${temp} \
+  #   V_ITER_NUM ${iter} \
+  #   V_THREAD_NUM ${thread} \
+  #   V_INIT_GRAD_DESCENT_STEP_SIZE ${gd} \
+  #   V_FINAL_INV_TEMP ${temp}
 
 # gd=1e-3
 # temp=10
 # ./bin/plans/train \
-#   V_MODEL_DECOR_FILE_PATH iter${iter}_gd${gd}_temp${temp} \
-#   V_ITER_NUM ${iter} \
-#   V_THREAD_NUM ${thread} \
-#   V_INIT_GRAD_DESCENT_STEP_SIZE ${gd} \
-#   V_FINAL_INV_TEMP ${temp}
+  #   V_MODEL_DECOR_FILE_PATH iter${iter}_gd${gd}_temp${temp} \
+  #   V_ITER_NUM ${iter} \
+  #   V_THREAD_NUM ${thread} \
+  #   V_INIT_GRAD_DESCENT_STEP_SIZE ${gd} \
+  #   V_FINAL_INV_TEMP ${temp}

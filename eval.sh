@@ -28,8 +28,8 @@ make plans/similar_phrase NOEXEC=1;
 iter=20
 thread=32
 
-gd=5e-3
-# gd=2e-3
+# gd=5e-3
+gd=2e-3
 # gd=1e-3
 sr=0.999
 ./bin/plans/similar_phrase \
